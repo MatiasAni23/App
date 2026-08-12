@@ -6,7 +6,7 @@ from docx import Document
 
 from generador import formatear_fecha, generar_contrato, generar_nombre_archivo
 from modelos import DatosContrato
-from utils import sanitizar_nombre_archivo
+from utils import parsear_datos_pegados, sanitizar_nombre_archivo
 
 
 def datos_prueba() -> DatosContrato:
@@ -18,7 +18,7 @@ def datos_prueba() -> DatosContrato:
 
 class GeneradorTests(unittest.TestCase):
     def test_fecha_dinamica(self):
-        self.assertEqual(formatear_fecha(date(2027, 1, 2)), "02 de enero de 2027")
+        self.assertEqual(formatear_fecha(date(2027, 1, 2)), "02 del mes de enero de 2027")
         self.assertTrue(generar_nombre_archivo(datos_prueba()).startswith("02012027_"))
 
     def test_sanitizar_nombre(self):
@@ -42,6 +42,26 @@ class GeneradorTests(unittest.TestCase):
         generado = Document(BytesIO(resultado.contenido))
         self.assertEqual(generado.paragraphs[0].text, "Cliente: Ana")
         self.assertEqual(generado.tables[0].cell(0, 0).text, "Banco: Banco/Estado")
+
+    def test_actualiza_linea_fija_de_banco_y_productos(self):
+        documento = Document()
+        documento.add_paragraph("Los productos entregados en monitoreo son:")
+        documento.add_paragraph("Banco BCI: Cuenta Corriente + Tarjeta de crédito")
+        plantilla = BytesIO()
+        documento.save(plantilla)
+
+        resultado = generar_contrato(plantilla.getvalue(), datos_prueba())
+        generado = Document(BytesIO(resultado.contenido))
+        self.assertEqual(generado.paragraphs[1].text, "Banco/Estado: Cuenta")
+
+    def test_clasifica_datos_pegados_desde_excel(self):
+        texto = "Nombres: Ana María\nEmail personal: ana@example.com\nPaís: España\nCelular de Contacto: 34 664"
+        campos, no_reconocidas = parsear_datos_pegados(texto)
+        self.assertEqual(campos["nombres"], "Ana María")
+        self.assertEqual(campos["email"], "ana@example.com")
+        self.assertEqual(campos["pais"], "España")
+        self.assertEqual(campos["celular"], "34 664")
+        self.assertEqual(no_reconocidas, [])
 
 
 if __name__ == "__main__":

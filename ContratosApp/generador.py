@@ -34,8 +34,11 @@ class ResultadoContrato:
 
 
 def formatear_fecha(fecha_obj: date | datetime) -> str:
-    """Convierte una fecha al formato usado por la plantilla: 02 de diciembre de 2025."""
-    return f"{fecha_obj.strftime('%d')} de {MESES_ES[fecha_obj.strftime('%B')]} de {fecha_obj.strftime('%Y')}"
+    """Convierte una fecha al formato contractual: 29 del mes de septiembre de 2025."""
+    return (
+        f"{fecha_obj.strftime('%d')} del mes de "
+        f"{MESES_ES[fecha_obj.strftime('%B')]} de {fecha_obj.strftime('%Y')}"
+    )
 
 
 def generar_nombre_archivo(datos: DatosContrato) -> str:
@@ -99,6 +102,40 @@ def reemplazar_texto(elemento, texto_buscar: str, reemplazo: str) -> int:
     return cantidad
 
 
+def _asignar_texto_parrafo(parrafo, texto: str) -> None:
+    """Actualiza el contenido de un párrafo sin modificar su estilo de párrafo."""
+    if parrafo.runs:
+        parrafo.runs[0].text = texto
+        for run in parrafo.runs[1:]:
+            run.text = ""
+    else:
+        parrafo.add_run(texto)
+
+
+def _actualizar_linea_productos(documento, datos: DatosContrato) -> bool:
+    """Actualiza la línea fija posterior al encabezado de productos de la plantilla.
+
+    Es un respaldo para las plantillas antiguas que aún contienen, por ejemplo,
+    ``Banco BCI: Cuenta Corriente + Tarjeta de crédito`` en lugar de los
+    placeholders ``<<Banco>>: <<Productos>>``.
+    """
+    parrafos = documento.paragraphs
+    for indice, parrafo in enumerate(parrafos[:-1]):
+        encabezado = parrafo.text.strip().casefold()
+        if "los productos entregados en monitoreo son" not in encabezado:
+            continue
+
+        for siguiente in parrafos[indice + 1:]:
+            texto = siguiente.text.strip()
+            if not texto:
+                continue
+            if texto.casefold().startswith("banco") and ":" in texto:
+                _asignar_texto_parrafo(siguiente, f"{datos.banco}: {datos.productos}")
+                return True
+            break
+    return False
+
+
 def _reemplazos(datos: DatosContrato) -> dict[str, str]:
     return {
         "<<Nombres>>": datos.nombres,
@@ -131,6 +168,8 @@ def generar_contrato(
             cantidad += reemplazar_texto(seccion.header, placeholder, valor)
             cantidad += reemplazar_texto(seccion.footer, placeholder, valor)
         (encontrados if cantidad else no_encontrados).append(placeholder)
+
+    _actualizar_linea_productos(documento, datos)
 
     salida = BytesIO()
     documento.save(salida)
