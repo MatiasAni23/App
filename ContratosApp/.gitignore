@@ -6,4 +6,9 @@ output/*
 .streamlit/secrets.toml
 credentials.json
 token.json
+credentials.json.json
+client_secret*.json
 .env
+.streamlit/secrets.toml
+.venv/
+venv/

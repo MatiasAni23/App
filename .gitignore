@@ -1,1 +1,7 @@
 /Contratos.ipynb
+credentials.json
+credentials.json.json
+token.json
+client_secret*.json
+.env
+.streamlit/secrets.toml

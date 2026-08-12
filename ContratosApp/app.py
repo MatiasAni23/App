@@ -7,6 +7,8 @@ import streamlit as st
 from generador import generar_contrato
 from modelos import DatosContrato
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
+from config import DRIVE_REVIEW_FOLDER_ID
+from drive_service import ErrorDrive, crear_servicio_drive, subir_docx_como_google_docs
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -16,6 +18,47 @@ MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 
 def _plantillas_disponibles() -> list[Path]:
     return sorted(DIRECTORIO_PLANTILLAS.glob("*.docx"))
+
+
+def _subir_resultado_a_drive(resultado, permitir_duplicado: bool = False) -> None:
+    """Intenta la extensión Drive sin afectar la descarga local del DOCX."""
+    try:
+        servicio = crear_servicio_drive()
+        st.session_state["resultado_drive"] = subir_docx_como_google_docs(
+            servicio, resultado.contenido, resultado.nombre_archivo,
+            DRIVE_REVIEW_FOLDER_ID, permitir_duplicado=permitir_duplicado,
+        )
+        st.session_state.pop("error_drive", None)
+    except ErrorDrive as error:
+        st.session_state["error_drive"] = str(error)
+        st.session_state.pop("resultado_drive", None)
+
+
+def _mostrar_resultado(resultado) -> None:
+    """Muestra Drive como acción principal y conserva la descarga DOCX de respaldo."""
+    st.success("✅ Contrato generado correctamente")
+    st.write(f"**Archivo:** {resultado.nombre_archivo}")
+    resultado_drive = st.session_state.get("resultado_drive")
+    if resultado_drive:
+        if resultado_drive.duplicado:
+            st.warning("Ya existe un contrato con este nombre en Google Drive.")
+            st.link_button("ABRIR CONTRATO EXISTENTE", resultado_drive.web_view_link, use_container_width=True)
+            if st.button("CREAR UNA NUEVA VERSIÓN", use_container_width=True):
+                _subir_resultado_a_drive(resultado, permitir_duplicado=True)
+                st.rerun()
+        else:
+            st.success("✅ Contrato guardado en Google Drive")
+            st.link_button("ABRIR CONTRATO EN DRIVE", resultado_drive.web_view_link, type="primary", use_container_width=True)
+    elif error_drive := st.session_state.get("error_drive"):
+        st.warning(f"⚠️ {error_drive} Puedes descargar el DOCX y reintentar después.")
+
+    st.download_button(
+        "DESCARGAR DOCX", data=resultado.contenido,
+        file_name=resultado.nombre_archivo, mime=MIME_DOCX,
+        use_container_width=True,
+    )
+    if resultado.placeholders_no_encontrados:
+        st.info("Algunos campos no aparecen en esta plantilla: " + ", ".join(resultado.placeholders_no_encontrados))
 
 
 def main() -> None:
@@ -69,41 +112,38 @@ def main() -> None:
         st.caption("La plantilla subida tiene prioridad sobre la plantilla guardada.")
         generar = st.form_submit_button("GENERAR CONTRATO", type="primary", use_container_width=True)
 
-    if not generar:
+    if not generar and "resultado_contrato" not in st.session_state:
         st.divider()
         st.subheader("Próximamente")
         st.button("Aprobar y enviar a firma", disabled=True, use_container_width=True)
         return
 
-    obligatorios = [nombres.strip(), apellidos.strip(), dni.strip(), email.strip(), banco.strip()]
-    if not all(obligatorios) or (subida is None and seleccion is None):
-        st.warning("⚠️ Debes completar los campos obligatorios y seleccionar o subir una plantilla.")
-        return
-    if not email_valido(email):
-        st.warning("⚠️ Ingresa un correo electrónico válido.")
-        return
+    if generar:
+        obligatorios = [nombres.strip(), apellidos.strip(), dni.strip(), email.strip(), banco.strip()]
+        if not all(obligatorios) or (subida is None and seleccion is None):
+            st.warning("⚠️ Debes completar los campos obligatorios y seleccionar o subir una plantilla.")
+            return
+        if not email_valido(email):
+            st.warning("⚠️ Ingresa un correo electrónico válido.")
+            return
 
-    datos = DatosContrato(
-        nombres=nombres.strip(), apellidos=apellidos.strip(), dni=dni.strip(),
-        celular_contacto=celular.strip(), email_personal=email.strip(), ciudad=ciudad.strip(),
-        pais=pais.strip(), monto=monto.strip(), banco=banco.strip(), productos=productos.strip(), fecha=fecha,
-    )
-    try:
-        plantilla = subida.getvalue() if subida is not None else seleccion
-        resultado = generar_contrato(plantilla, datos)
-    except Exception:
-        st.error("No fue posible generar el contrato. Verifica que la plantilla Word sea válida e inténtalo nuevamente.")
-        return
+        datos = DatosContrato(
+            nombres=nombres.strip(), apellidos=apellidos.strip(), dni=dni.strip(),
+            celular_contacto=celular.strip(), email_personal=email.strip(), ciudad=ciudad.strip(),
+            pais=pais.strip(), monto=monto.strip(), banco=banco.strip(), productos=productos.strip(), fecha=fecha,
+        )
+        try:
+            plantilla = subida.getvalue() if subida is not None else seleccion
+            resultado = generar_contrato(plantilla, datos)
+        except Exception:
+            st.error("No fue posible generar el contrato. Verifica que la plantilla Word sea válida e inténtalo nuevamente.")
+            return
+        st.session_state["resultado_contrato"] = resultado
+        st.session_state.pop("resultado_drive", None)
+        st.session_state.pop("error_drive", None)
+        _subir_resultado_a_drive(resultado)
 
-    st.success("✅ Contrato generado correctamente")
-    st.write(f"**Archivo:** {resultado.nombre_archivo}")
-    st.download_button(
-        "DESCARGAR CONTRATO", data=resultado.contenido,
-        file_name=resultado.nombre_archivo, mime=MIME_DOCX,
-        type="primary", use_container_width=True,
-    )
-    if resultado.placeholders_no_encontrados:
-        st.info("Algunos campos no aparecen en esta plantilla: " + ", ".join(resultado.placeholders_no_encontrados))
+    _mostrar_resultado(st.session_state["resultado_contrato"])
 
 
 if __name__ == "__main__":
