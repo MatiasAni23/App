@@ -1,4 +1,6 @@
 from io import BytesIO
+import json
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -8,6 +10,7 @@ from drive_service import (
     buscar_documento_duplicado,
     subir_docx_como_google_docs,
     verificar_carpeta,
+    _obtener_credenciales_desde_secreto,
 )
 
 
@@ -51,6 +54,22 @@ class DriveServiceTests(unittest.TestCase):
             "name": "Contrato", "mimeType": "application/vnd.google-apps.document", "parents": ["folder-1"],
         })
         self.assertTrue(argumentos["supportsAllDrives"])
+
+    def test_lee_token_oauth_desde_secreto(self):
+        token = {
+            "token": "access-token-falso", "refresh_token": "refresh-token-falso",
+            "token_uri": "https://oauth2.googleapis.com/token", "client_id": "client-id",
+            "client_secret": "client-secret", "scopes": ["https://www.googleapis.com/auth/drive"],
+        }
+        anterior = os.environ.get("GOOGLE_OAUTH_TOKEN")
+        try:
+            os.environ["GOOGLE_OAUTH_TOKEN"] = json.dumps(token)
+            self.assertEqual(_obtener_credenciales_desde_secreto().client_id, "client-id")
+        finally:
+            if anterior is None:
+                os.environ.pop("GOOGLE_OAUTH_TOKEN", None)
+            else:
+                os.environ["GOOGLE_OAUTH_TOKEN"] = anterior
 
 
 if __name__ == "__main__":

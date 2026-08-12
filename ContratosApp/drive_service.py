@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import json
 import logging
+import os
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -40,6 +42,10 @@ class SinPermisoCarpeta(ErrorDrive):
     pass
 
 
+class TokenCloudNoConfigurado(ErrorDrive):
+    pass
+
+
 @dataclass(frozen=True)
 class ResultadoDrive:
     id: str
@@ -53,8 +59,9 @@ def obtener_credenciales(
     credentials_path: Path = CREDENTIALS_PATH, token_path: Path = TOKEN_PATH
 ) -> Credentials:
     """Carga, renueva o solicita OAuth local y guarda el token sin registrarlo."""
-    credenciales = None
-    if token_path.exists():
+    credenciales = _obtener_credenciales_desde_secreto()
+    token_desde_secreto = credenciales is not None
+    if credenciales is None and token_path.exists():
         try:
             credenciales = Credentials.from_authorized_user_file(token_path, SCOPES)
         except Exception as error:
@@ -70,8 +77,13 @@ def obtener_credenciales(
             credenciales = None
 
     if credenciales and credenciales.valid:
-        token_path.write_text(credenciales.to_json(), encoding="utf-8")
+        if not token_desde_secreto:
+            token_path.write_text(credenciales.to_json(), encoding="utf-8")
         return credenciales
+    if os.getenv("GOOGLE_OAUTH_CLIENT_CONFIG"):
+        raise TokenCloudNoConfigurado(
+            "Falta configurar GOOGLE_OAUTH_TOKEN en los Secrets de Streamlit Cloud."
+        )
     if not credentials_path.exists():
         raise CredencialesNoEncontradas("No se encontró credentials.json.")
 
@@ -83,6 +95,18 @@ def obtener_credenciales(
     except Exception as error:
         LOGGER.exception("No fue posible completar OAuth: %s", type(error).__name__)
         raise ErrorDrive("No fue posible iniciar sesión en Google.") from error
+
+
+def _obtener_credenciales_desde_secreto() -> Credentials | None:
+    """Lee el token OAuth de Secrets sin depender de Streamlit."""
+    token_json = os.getenv("GOOGLE_OAUTH_TOKEN")
+    if not token_json:
+        return None
+    try:
+        return Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    except (ValueError, json.JSONDecodeError) as error:
+        LOGGER.warning("El token OAuth configurado como secreto no es válido: %s", type(error).__name__)
+        raise TokenCloudNoConfigurado("El secreto GOOGLE_OAUTH_TOKEN no tiene un formato válido.") from error
 
 
 def crear_servicio_drive(credenciales: Credentials | None = None):

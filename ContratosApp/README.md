@@ -59,6 +59,24 @@ la carpeta de revisión. El DOCX sigue disponible como descarga de respaldo.
 **no deben subirse a Git**. Si los scopes cambian en el futuro, elimine sólo el
 archivo local `token.json` y autorice nuevamente.
 
+### Despliegue en Streamlit Community Cloud
+
+El navegador OAuth de escritorio se usa solo localmente. Primero ejecute
+`python test_drive.py` para crear y autorizar `token.json`. Luego, en **App
+settings → Secrets** de Streamlit Community Cloud, agregue:
+
+```toml
+# Pegue aquí el contenido completo de token.json, sin subirlo a Git.
+GOOGLE_OAUTH_TOKEN = '''PEGAR_AQUI_EL_CONTENIDO_DE_token.json'''
+
+# Opcional: carpeta de pruebas distinta para la app desplegada.
+DRIVE_REVIEW_FOLDER_ID = "ID_DE_LA_CARPETA_DE_DRIVE"
+```
+
+La app desplegada utiliza ese token para la cuenta corporativa ya autorizada.
+Todos los documentos creados usarán dicha cuenta. Si el token se revoca, vuelva
+a autorizar en local y reemplace el secreto `GOOGLE_OAUTH_TOKEN`.
+
 ## Nota sobre la migración
 
 La app conserva los placeholders y el formato de fecha del notebook original. Se corrigió el componente de fecha del nombre de archivo, que antes fijaba el año `2026`: ahora usa la fecha elegida. El sufijo contractual `acuerdo 2026` se mantiene por compatibilidad y está centralizado en `SUFIJO_CONTRACTUAL` dentro de `generador.py`.
