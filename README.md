@@ -1,25 +1,5 @@
 # Gestión de Contratos
 
-## Envío del PDF final a firma mediante n8n
-
-Después de generar el DOCX, revise el documento fuera de la aplicación y suba
-manualmente el **PDF final**. Streamlit no convierte ni reemplaza ese archivo.
-El envío se realiza sólo al presionar **APROBAR Y ENVIAR A FIRMA** y requiere que
-la app se haya abierto desde Google Sheets con `?registro=UUID`.
-
-Configure estos secretos/variables, sin incluirlos en el código ni en Git:
-
-```toml
-N8N_ZAPSIGN_WEBHOOK_URL = "URL_DEL_WEBHOOK_DE_N8N"
-# Opcional: n8n valida este encabezado si se configura en ambos lados.
-N8N_WEBHOOK_SECRET = "SECRETO_OPCIONAL"
-```
-
-El webhook recibe únicamente `registro_id`, `nombre`, `email`, `nombre_archivo`
-y `pdf_base64`. n8n es responsable de validar que el registro esté en estado
-`Generado`, enviar a ZapSign y cambiar luego el estado a `Enviado`. El PDF
-admite hasta 20 MB y debe empezar con la firma `%PDF`.
-
 Aplicación local para crear contratos Word editables a partir de una plantilla `.docx`.
 
 ## Requisitos
@@ -129,6 +109,26 @@ contenido de `token.json` tras autorizar nuevamente y agregue:
 ```toml
 SPREADSHEET_ID = "ID_DE_TU_GOOGLE_SHEETS"
 ```
+
+## Envío del PDF final a firma mediante n8n
+
+Después de generar el DOCX, revise el documento fuera de la aplicación y suba
+manualmente el **PDF final**. Streamlit no convierte ni reemplaza ese archivo.
+El envío se realiza sólo al presionar **APROBAR Y ENVIAR A FIRMA** y requiere que
+la app se haya abierto desde Google Sheets con `?registro=UUID`.
+
+Configure estos secretos/variables, sin incluirlos en el código ni en Git:
+
+```toml
+N8N_ZAPSIGN_WEBHOOK_URL = "URL_DEL_WEBHOOK_DE_N8N"
+# Opcional: n8n valida este encabezado si se configura en ambos lados.
+N8N_WEBHOOK_SECRET = "SECRETO_OPCIONAL"
+```
+
+El webhook recibe únicamente `registro_id`, `nombre`, `email`, `nombre_archivo`
+y `pdf_base64`. n8n es responsable de validar que el registro esté en estado
+`Generado`, enviar a ZapSign y cambiar luego el estado a `Enviado`. El PDF
+admite hasta 20 MB y debe empezar con la firma `%PDF`.
 
 ## Nota sobre la migración
 
