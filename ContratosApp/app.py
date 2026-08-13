@@ -8,8 +8,9 @@ import streamlit as st
 from generador import generar_contrato
 from modelos import DatosContrato
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
-from config import DRIVE_REVIEW_FOLDER_ID
+from config import DRIVE_REVIEW_FOLDER_ID, MAX_PDF_SIZE_BYTES, N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL
 from drive_service import ErrorDrive, crear_servicio_drive, obtener_credenciales, subir_docx_como_google_docs
+from n8n_service import ErrorN8N, enviar_pdf_a_firma, validar_pdf
 from sheets_service import ErrorSheets, actualizar_estado_contrato, crear_servicio_sheets, obtener_contrato_pendiente
 
 
@@ -71,6 +72,61 @@ def _marcar_registro_generado() -> None:
         st.warning("El contrato se generó, pero no fue posible actualizar su estado en Google Sheets.")
 
 
+def _limpiar_firma_al_cambiar_registro(registro_id: str | None) -> None:
+    """Evita asociar el PDF de una persona a otro UUID."""
+    if st.session_state.get("_firma_registro_id") == registro_id:
+        return
+    for clave in ("_firma_pdf_nombre", "_firma_pdf_bytes", "_registro_enviado"):
+        st.session_state.pop(clave, None)
+    st.session_state["_firma_registro_id"] = registro_id
+
+
+def _seccion_firma(nombres: str, apellidos: str, email: str) -> None:
+    """Presenta el paso manual de PDF y el único botón que puede llamar a n8n."""
+    st.divider()
+    st.subheader("Documento final para firma")
+    registro_id = st.session_state.get("_registro_id")
+    if not registro_id:
+        st.caption("Para enviar automáticamente a firma, abre el contrato desde Google Sheets.")
+        return
+
+    archivo_pdf = st.file_uploader("Subir documento PDF final", type=["pdf"], key=f"pdf_final_{registro_id}")
+    if archivo_pdf is not None:
+        pdf_bytes = archivo_pdf.getvalue()
+        try:
+            validar_pdf(archivo_pdf.name, pdf_bytes, MAX_PDF_SIZE_BYTES)
+            st.session_state["_firma_pdf_nombre"] = archivo_pdf.name
+            st.session_state["_firma_pdf_bytes"] = pdf_bytes
+        except ErrorN8N as error:
+            st.session_state.pop("_firma_pdf_nombre", None)
+            st.session_state.pop("_firma_pdf_bytes", None)
+            st.error(str(error))
+
+    nombre = f"{nombres.strip()} {apellidos.strip()}".strip()
+    pdf_nombre = st.session_state.get("_firma_pdf_nombre")
+    pdf_bytes = st.session_state.get("_firma_pdf_bytes")
+    if pdf_nombre:
+        st.write(f"**Firmante:** {nombre}")
+        st.write(f"**Correo:** {email.strip()}")
+        st.write(f"**Documento:** {pdf_nombre}")
+
+    if st.session_state.get("_registro_enviado") == registro_id:
+        st.success("✅ Enviado a firma")
+        return
+    habilitado = bool(pdf_bytes and nombre and email_valido(email))
+    if st.button("APROBAR Y ENVIAR A FIRMA", type="primary", use_container_width=True, disabled=not habilitado):
+        try:
+            resultado = enviar_pdf_a_firma(
+                N8N_ZAPSIGN_WEBHOOK_URL, registro_id, nombre, email, pdf_nombre, pdf_bytes,
+                webhook_secret=N8N_WEBHOOK_SECRET or None, max_size_bytes=MAX_PDF_SIZE_BYTES,
+            )
+        except ErrorN8N as error:
+            st.error(str(error))
+        else:
+            st.session_state["_registro_enviado"] = registro_id
+            st.success("✅ Contrato enviado correctamente a firma.")
+
+
 def _subir_resultado_a_drive(resultado, permitir_duplicado: bool = False) -> None:
     """Intenta la extensión Drive sin afectar la descarga local del DOCX."""
     try:
@@ -119,6 +175,7 @@ def main() -> None:
     st.caption("Complete los datos, genere el Word editable y revíselo antes de enviarlo a firma.")
 
     registro_id = st.query_params.get("registro")
+    _limpiar_firma_al_cambiar_registro(registro_id)
     if registro_id:
         mensaje_carga = _cargar_registro_desde_sheets(registro_id)
         if mensaje_carga:
@@ -205,6 +262,7 @@ def main() -> None:
         _subir_resultado_a_drive(resultado)
 
     _mostrar_resultado(st.session_state["resultado_contrato"])
+    _seccion_firma(nombres, apellidos, email)
 
 
 if __name__ == "__main__":
