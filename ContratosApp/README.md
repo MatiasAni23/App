@@ -77,6 +77,39 @@ La app desplegada utiliza ese token para la cuenta corporativa ya autorizada.
 Todos los documentos creados usarán dicha cuenta. Si el token se revoca, vuelva
 a autorizar en local y reemplace el secreto `GOOGLE_OAUTH_TOKEN`.
 
+## Integración con Google Sheets
+
+1. Habilite **Google Sheets API** además de Google Drive API en el mismo
+   proyecto de Google Cloud.
+2. Configure el ID del archivo de Google Sheets en `SPREADSHEET_ID`: puede
+   hacerlo en `config.py` para local o como Secret/variable de entorno en
+   Streamlit Community Cloud.
+3. La pestaña debe llamarse `Contratos_Pendientes` y usar las columnas A:M:
+   `ID, Fecha, Nombres, Apellidos, DNI, Celular, Email, Ciudad, País, Monto,
+   Banco, Productos, Estado`.
+4. Para abrir un registro desde Apps Script use:
+
+   ```text
+   https://tu-app.streamlit.app/?registro=UUID
+   ```
+
+   La app sólo recibe el UUID, carga una vez los datos y deja el formulario
+   editable. Sin `registro`, el ingreso manual y el pegado desde Excel siguen
+   funcionando normalmente.
+5. Después de crear correctamente el DOCX, la app cambia el estado de
+   `Pendiente` a `Generado`. Si falla el DOCX, el estado no se modifica.
+
+El OAuth ahora requiere los scopes de Drive y Sheets. **Una sola vez**, elimine
+manualmente `token.json`, ejecute `python test_drive.py` y autorice de nuevo.
+No elimine el token desde el código ni suba `credentials.json`/`token.json` a Git.
+
+Para Streamlit Cloud, actualice el Secret `GOOGLE_OAUTH_TOKEN` con el nuevo
+contenido de `token.json` tras autorizar nuevamente y agregue:
+
+```toml
+SPREADSHEET_ID = "ID_DE_TU_GOOGLE_SHEETS"
+```
+
 ## Nota sobre la migración
 
 La app conserva los placeholders y el formato de fecha del notebook original. Se corrigió el componente de fecha del nombre de archivo, que antes fijaba el año `2026`: ahora usa la fecha elegida. El sufijo contractual `acuerdo 2026` se mantiene por compatibilidad y está centralizado en `SUFIJO_CONTRACTUAL` dentro de `generador.py`.

@@ -1,5 +1,6 @@
 """Interfaz local de Streamlit para la generación de contratos."""
 
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -8,7 +9,8 @@ from generador import generar_contrato
 from modelos import DatosContrato
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
 from config import DRIVE_REVIEW_FOLDER_ID
-from drive_service import ErrorDrive, crear_servicio_drive, subir_docx_como_google_docs
+from drive_service import ErrorDrive, crear_servicio_drive, obtener_credenciales, subir_docx_como_google_docs
+from sheets_service import ErrorSheets, actualizar_estado_contrato, crear_servicio_sheets, obtener_contrato_pendiente
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,6 +20,55 @@ MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 
 def _plantillas_disponibles() -> list[Path]:
     return sorted(DIRECTORIO_PLANTILLAS.glob("*.docx"))
+
+
+def _fecha_desde_sheets(valor: str):
+    """Interpreta formatos habituales de Sheets; conserva la fecha actual si falla."""
+    for formato in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y"):
+        try:
+            return datetime.strptime(valor.strip(), formato).date()
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _cargar_registro_desde_sheets(registro_id: str) -> str | None:
+    """Carga un registro sólo una vez por UUID, antes de crear los widgets."""
+    if st.session_state.get("_registro_cargado") == registro_id:
+        return None
+    try:
+        servicio = crear_servicio_sheets(obtener_credenciales())
+        registro = obtener_contrato_pendiente(servicio, registro_id)
+    except (ErrorDrive, ErrorSheets) as error:
+        return str(error)
+    if registro is None:
+        st.session_state["_registro_cargado"] = registro_id
+        return "No se encontró el registro solicitado en Google Sheets."
+    for clave in ("nombres", "apellidos", "dni", "celular", "email", "ciudad", "pais", "monto", "banco", "productos"):
+        st.session_state[clave] = registro[clave]
+    if fecha := _fecha_desde_sheets(registro["fecha"]):
+        st.session_state["fecha"] = fecha
+    st.session_state["_registro_cargado"] = registro_id
+    st.session_state["_registro_estado"] = registro["estado"]
+    st.session_state["_registro_id"] = registro_id
+    st.session_state.pop("resultado_contrato", None)
+    st.session_state.pop("resultado_drive", None)
+    return "Datos cargados automáticamente desde Google Sheets."
+
+
+def _marcar_registro_generado() -> None:
+    """Actualiza Sheets sólo después de que el DOCX se haya creado con éxito."""
+    registro_id = st.session_state.get("_registro_id")
+    if not registro_id or st.session_state.get("_registro_estado") == "Generado":
+        return
+    try:
+        servicio = crear_servicio_sheets(obtener_credenciales())
+        if actualizar_estado_contrato(servicio, registro_id, "Generado"):
+            st.session_state["_registro_estado"] = "Generado"
+        else:
+            st.warning("El contrato se generó, pero no se encontró el registro para actualizar su estado.")
+    except (ErrorDrive, ErrorSheets):
+        st.warning("El contrato se generó, pero no fue posible actualizar su estado en Google Sheets.")
 
 
 def _subir_resultado_a_drive(resultado, permitir_duplicado: bool = False) -> None:
@@ -67,6 +118,15 @@ def main() -> None:
     st.subheader("Generación de contrato")
     st.caption("Complete los datos, genere el Word editable y revíselo antes de enviarlo a firma.")
 
+    registro_id = st.query_params.get("registro")
+    if registro_id:
+        mensaje_carga = _cargar_registro_desde_sheets(registro_id)
+        if mensaje_carga:
+            if mensaje_carga.startswith("Datos cargados"):
+                st.caption(f"✅ {mensaje_carga}")
+            else:
+                st.warning(mensaje_carga)
+
     with st.expander("Pegar datos desde Excel", expanded=True):
         st.caption("Pegue las filas copiadas desde Excel. Ejemplo: Nombres: María Ejemplo")
         texto_pegado = st.text_area(
@@ -102,7 +162,7 @@ def main() -> None:
             banco = st.text_input("Banco *", key="banco")
             productos = st.text_input("Productos", key="productos")
 
-        fecha = st.date_input("Fecha *", value=fecha_hoy(), format="DD/MM/YYYY")
+        fecha = st.date_input("Fecha *", value=st.session_state.get("fecha", fecha_hoy()), format="DD/MM/YYYY", key="fecha")
         seleccion = st.selectbox(
             "Plantilla guardada",
             options=[None, *plantillas],
@@ -141,6 +201,7 @@ def main() -> None:
         st.session_state["resultado_contrato"] = resultado
         st.session_state.pop("resultado_drive", None)
         st.session_state.pop("error_drive", None)
+        _marcar_registro_generado()
         _subir_resultado_a_drive(resultado)
 
     _mostrar_resultado(st.session_state["resultado_contrato"])

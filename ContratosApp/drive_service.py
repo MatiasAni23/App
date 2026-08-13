@@ -21,7 +21,12 @@ from config import CREDENTIALS_PATH, TOKEN_PATH
 
 LOGGER = logging.getLogger(__name__)
 # Se requiere acceso a una carpeta existente que la app no creó; por eso Drive completo.
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Un único OAuth reutilizado por Drive y Sheets. Al cambiar estos scopes hay que
+# eliminar token.json manualmente una vez y volver a autorizar.
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MIME_GOOGLE_DOC = "application/vnd.google-apps.document"
 
