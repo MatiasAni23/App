@@ -20,3 +20,4 @@ N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET", "")
 MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB, límite razonable para webhook.
 
 #ID CARPETA REAL: 1GLxHxL7XV5JpwPTiCguyFalac3CAQnug
+#
