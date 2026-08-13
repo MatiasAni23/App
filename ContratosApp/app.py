@@ -87,7 +87,7 @@ def _subir_resultado_a_drive(resultado, permitir_duplicado: bool = False) -> Non
 
 def _mostrar_resultado(resultado) -> None:
     """Muestra Drive como acción principal y conserva la descarga DOCX de respaldo."""
-    st.success("✅ Contrato generado correctamente")
+    st.success(" Contrato generado correctamente")
     st.write(f"**Archivo:** {resultado.nombre_archivo}")
     resultado_drive = st.session_state.get("resultado_drive")
     if resultado_drive:
@@ -98,7 +98,7 @@ def _mostrar_resultado(resultado) -> None:
                 _subir_resultado_a_drive(resultado, permitir_duplicado=True)
                 st.rerun()
         else:
-            st.success("✅ Contrato guardado en Google Drive")
+            st.success(" Contrato guardado en Google Drive")
             st.link_button("ABRIR CONTRATO EN DRIVE", resultado_drive.web_view_link, type="primary", use_container_width=True)
     elif error_drive := st.session_state.get("error_drive"):
         st.warning(f"⚠️ {error_drive} Puedes descargar el DOCX y reintentar después.")
@@ -123,7 +123,7 @@ def main() -> None:
         mensaje_carga = _cargar_registro_desde_sheets(registro_id)
         if mensaje_carga:
             if mensaje_carga.startswith("Datos cargados"):
-                st.caption(f"✅ {mensaje_carga}")
+                st.caption(f" {mensaje_carga}")
             else:
                 st.warning(mensaje_carga)
 
