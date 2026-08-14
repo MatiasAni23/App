@@ -32,7 +32,45 @@ PAGE_TEMPLATE = Environment(autoescape=select_autoescape(default=True)).from_str
 <details class="paste-data"><summary>Pegar datos desde Excel (opcional)</summary><form action="/datos/pegar" method="post"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p><label>Datos copiados<textarea name="datos_pegados" rows="9" placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente"></textarea></label><button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button></form></details>
 <form action="/contrato/generar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><details {% if not registro_id %}open{% endif %}><summary>¿Quieres verificar los datos?</summary><p class="hint">Puedes revisar o corregir la información antes de crear el borrador.</p><div class="grid"><label>Nombres *<input name="nombres" required value="{{ datos.nombres }}"></label><label>Apellidos *<input name="apellidos" required value="{{ datos.apellidos }}"></label><label>DNI / Documento *<input name="dni" required value="{{ datos.dni }}"></label><label>Celular<input name="celular" value="{{ datos.celular }}"></label><label>Email *<input name="email" type="email" required value="{{ datos.email }}"></label><label>Ciudad<input name="ciudad" value="{{ datos.ciudad }}"></label><label>País<input name="pais" value="{{ datos.pais }}"></label><label>Monto<input name="monto" value="{{ datos.monto }}"></label><label>Banco *<input name="banco" required value="{{ datos.banco }}"></label><label>Productos<input name="productos" value="{{ datos.productos }}"></label></div><label>Fecha *<input name="fecha" type="date" required value="{{ fecha.isoformat() }}"></label></details><section class="card"><h2>Plantilla del contrato</h2><label>Plantilla guardada<select name="plantilla_guardada"><option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option value="{{ plantilla }}">{{ plantilla }}</option>{% endfor %}</select></label><label>Subir plantilla personalizada<input name="plantilla_personalizada" type="file" accept=".docx"></label><p class="hint">La plantilla subida tiene prioridad sobre la plantilla guardada.</p><button type="submit">GENERAR BORRADOR DE CONTRATO</button></section></form>
 {% if estado_generado or enviado %}<section class="card"><h2>Documento final para firma</h2>{% if enviado %}<div class="notice success">✓ Enviado a firma</div>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id }}"><p><strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}</p><p><strong>Correo:</strong> {{ datos.email }}</p><label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required></label><p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p><button type="submit">APROBAR Y ENVIAR A FIRMA</button></form>{% endif %}</section>{% endif %}
-</main></body></html>""")
+</main><script>
+const formGenerar = document.querySelector('form[action="/contrato/generar"]');
+formGenerar?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const boton = event.submitter;
+  const pestañaDrive = window.open('', '_blank');
+  boton.disabled = true;
+  boton.textContent = 'GENERANDO BORRADOR...';
+  try {
+    const respuesta = await fetch('/contrato/generar', { method: 'POST', body: new FormData(formGenerar) });
+    if (!respuesta.ok) {
+      if (pestañaDrive) pestañaDrive.close();
+      document.open();
+      document.write(await respuesta.text());
+      document.close();
+      return;
+    }
+    const contenido = await respuesta.blob();
+    const enlace = document.createElement('a');
+    enlace.href = URL.createObjectURL(contenido);
+    enlace.download = (respuesta.headers.get('content-disposition') || 'borrador.docx').match(/filename\*?=(?:UTF-8'')?([^;]+)/i)?.[1] || 'borrador.docx';
+    enlace.click();
+    URL.revokeObjectURL(enlace.href);
+    const urlDrive = respuesta.headers.get('x-google-drive-url');
+    if (urlDrive && pestañaDrive) {
+      pestañaDrive.location.href = urlDrive;
+    } else if (pestañaDrive) {
+      pestañaDrive.close();
+      alert('El DOCX fue descargado, pero no se pudo abrir la copia de Google Drive. Revisa la configuración de Google.');
+    }
+  } catch (error) {
+    if (pestañaDrive) pestañaDrive.close();
+    alert('No fue posible generar el borrador. Inténtalo nuevamente.');
+  } finally {
+    boton.disabled = false;
+    boton.textContent = 'GENERAR BORRADOR DE CONTRATO';
+  }
+});
+</script></body></html>""")
 
 
 def _plantillas_disponibles() -> list[Path]:
