@@ -1,11 +1,7 @@
 {
   "functions": {
     "api/index.py": {
-      "includeFiles": [
-        "public/**",
-        "templates/**",
-        "plantillas/**"
-      ]
+      "includeFiles": "{public,templates,plantillas}/**"
     }
   },
   "rewrites": [
