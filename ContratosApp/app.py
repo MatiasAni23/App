@@ -255,7 +255,7 @@ async def abrir_editor(registro_id: str):
     )
     pagina = pagina.replace(
         '</script></body>',
-        f'''<script>document.getElementById("back-to-contract").onclick = function(event) {{
+        f'''</script><script>document.getElementById("back-to-contract").onclick = function(event) {{
             event.preventDefault(); returnAfterDownload = true; pdfWindow = window.open("", "_blank");
             window.docEditor.downloadAs("pdf");
             window.setTimeout(function() {{ if (returnAfterDownload) window.location.href = "/?registro={registro_id}"; }}, 3500);
