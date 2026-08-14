@@ -9,6 +9,8 @@ token.json
 credentials.json.json
 client_secret*.json
 .env
+.env.*
+!.env.example
 secrets.toml
 .streamlit/secrets.toml
 .venv/

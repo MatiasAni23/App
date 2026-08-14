@@ -11,6 +11,7 @@ from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -64,6 +65,9 @@ def obtener_credenciales(
     credentials_path: Path = CREDENTIALS_PATH, token_path: Path = TOKEN_PATH
 ) -> Credentials:
     """Carga, renueva o solicita OAuth local y guarda el token sin registrarlo."""
+    credenciales = _obtener_credenciales_service_account()
+    if credenciales:
+        return credenciales
     credenciales = _obtener_credenciales_desde_secreto()
     token_desde_secreto = credenciales is not None
     if credenciales is None and token_path.exists():
@@ -100,6 +104,20 @@ def obtener_credenciales(
     except Exception as error:
         LOGGER.exception("No fue posible completar OAuth: %s", type(error).__name__)
         raise ErrorDrive("No fue posible iniciar sesión en Google.") from error
+
+
+def _obtener_credenciales_service_account() -> Credentials | None:
+    """Usa la identidad de producción configurada en Vercel, si existe."""
+    contenido = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if not contenido:
+        return None
+    try:
+        return service_account.Credentials.from_service_account_info(
+            json.loads(contenido), scopes=SCOPES,
+        )
+    except (ValueError, json.JSONDecodeError) as error:
+        LOGGER.warning("La Service Account configurada no es válida: %s", type(error).__name__)
+        raise ErrorDrive("La configuración de Google para producción no es válida.") from error
 
 
 def _obtener_credenciales_desde_secreto() -> Credentials | None:
