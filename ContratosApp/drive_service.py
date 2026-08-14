@@ -193,19 +193,31 @@ def buscar_documento_duplicado(servicio, folder_id: str, nombre: str) -> dict | 
 
 
 def subir_docx_como_google_docs(
-    servicio, contenido_docx: bytes, nombre_archivo: str, folder_id: str, *, permitir_duplicado: bool = False
+    servicio, contenido_docx: bytes, nombre_archivo: str, folder_id: str, *, permitir_duplicado: bool = False,
+    registro_id: str | None = None,
 ) -> ResultadoDrive:
     """Importa un DOCX en memoria como Google Docs editable, sin archivos temporales."""
     verificar_carpeta(servicio, folder_id)
     nombre = nombre_archivo.removesuffix(".docx")
     duplicado = buscar_documento_duplicado(servicio, folder_id, nombre)
     if duplicado and not permitir_duplicado:
+        if registro_id:
+            try:
+                servicio.files().update(
+                    fileId=duplicado["id"], body={"appProperties": {"registro_id": registro_id}},
+                    fields="id", supportsAllDrives=True,
+                ).execute()
+            except Exception as error:
+                LOGGER.warning("No se pudo asociar documento existente: %s", type(error).__name__)
+                raise ErrorDrive("No se pudo asociar el borrador al registro.") from error
         return ResultadoDrive(
             id=duplicado["id"], nombre=duplicado["name"], web_view_link=obtener_url_documento(duplicado),
             folder_id=folder_id, duplicado=True,
         )
     try:
         metadata = {"name": nombre, "mimeType": MIME_GOOGLE_DOC, "parents": [folder_id]}
+        if registro_id:
+            metadata["appProperties"] = {"registro_id": registro_id}
         media = MediaIoBaseUpload(BytesIO(contenido_docx), mimetype=MIME_DOCX, resumable=False)
         creado = servicio.files().create(
             body=metadata, media_body=media, fields="id,name,mimeType,webViewLink,parents",
@@ -221,6 +233,51 @@ def subir_docx_como_google_docs(
         if error.resp.status in (401, 403):
             raise SinPermisoCarpeta("No tienes permisos para crear archivos en la carpeta configurada de Google Drive.") from error
         raise ErrorDrive("No se pudo guardar el contrato en Google Drive.") from error
+
+
+def obtener_documento_por_registro(servicio, registro_id: str) -> dict | None:
+    """Localiza el Google Docs asociado de forma persistente a un registro."""
+    registro_escapado = registro_id.replace("'", "\\'")
+    consulta = (
+        "appProperties has { key='registro_id' and value='" + registro_escapado + "' } "
+        f"and mimeType = '{MIME_GOOGLE_DOC}' and trashed = false"
+    )
+    try:
+        respuesta = servicio.files().list(
+            q=consulta, spaces="drive",
+            fields="files(id,name,mimeType,webViewLink,modifiedTime,appProperties)",
+            includeItemsFromAllDrives=True, supportsAllDrives=True,
+        ).execute()
+        archivos = respuesta.get("files", [])
+        return archivos[0] if archivos else None
     except Exception as error:
-        LOGGER.exception("Falló la subida a Drive: %s", type(error).__name__)
-        raise ErrorDrive("No se pudo guardar el contrato en Google Drive.") from error
+        LOGGER.warning("No se pudo buscar documento del registro: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo localizar el contrato en Google Drive.") from error
+
+
+def descargar_google_doc_como_docx(servicio, file_id: str) -> bytes:
+    """Exporta un Google Docs a DOCX en memoria."""
+    try:
+        contenido = servicio.files().export_media(fileId=file_id, mimeType=MIME_DOCX).execute()
+        if not isinstance(contenido, bytes) or not contenido:
+            raise ErrorDrive("El documento de Google Drive no contiene un DOCX vÃ¡lido.")
+        return contenido
+    except ErrorDrive:
+        raise
+    except Exception as error:
+        LOGGER.warning("No se pudo exportar contrato de Drive: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo descargar el contrato desde Google Drive.") from error
+
+
+def reemplazar_google_doc_desde_docx(servicio, file_id: str, contenido_docx: bytes) -> dict:
+    """Actualiza la misma entidad de Drive, conservando su file_id cuando Drive lo permite."""
+    try:
+        media = MediaIoBaseUpload(BytesIO(contenido_docx), mimetype=MIME_DOCX, resumable=False)
+        return servicio.files().update(
+            fileId=file_id, media_body=media,
+            fields="id,name,mimeType,webViewLink,modifiedTime,appProperties",
+            supportsAllDrives=True,
+        ).execute()
+    except Exception as error:
+        LOGGER.warning("No se pudo actualizar contrato en Drive: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo guardar la versiÃ³n editada en Google Drive.") from error

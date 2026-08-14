@@ -1,17 +1,25 @@
 """Aplicación FastAPI para generación de borradores y envío a firma."""
 
 from datetime import date, datetime
+import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from jinja2 import Environment, select_autoescape
 
-from config import DRIVE_REVIEW_FOLDER_ID, MAX_PDF_SIZE_BYTES, N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL
-from drive_service import ErrorDrive, crear_servicio_drive, obtener_credenciales, subir_docx_como_google_docs
+from config import (APP_BASE_URL, DRIVE_REVIEW_FOLDER_ID, MAX_DOCX_SIZE_BYTES, MAX_PDF_SIZE_BYTES,
+                    N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL, ONLYOFFICE_DOCUMENT_SERVER_URL,
+                    ONLYOFFICE_JWT_HEADER, ONLYOFFICE_JWT_SECRET, ONLYOFFICE_URL_SIGNING_SECRET)
+from drive_service import (ErrorDrive, crear_servicio_drive, descargar_google_doc_como_docx,
+                           obtener_credenciales, obtener_documento_por_registro,
+                           reemplazar_google_doc_desde_docx, subir_docx_como_google_docs)
 from generador import generar_contrato
 from modelos import DatosContrato
 from n8n_service import ErrorN8N, enviar_pdf_a_firma
+from onlyoffice_service import (ErrorOnlyOffice, clave_documento, crear_jwt, crear_token_url,
+                                descargar_docx_editado, editor_configurado, jwt_valido,
+                                validar_token_url)
 from sheets_service import ErrorSheets, actualizar_estado_contrato, crear_servicio_sheets, obtener_contrato_pendiente
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
 
@@ -29,7 +37,7 @@ PAGE_TEMPLATE = Environment(autoescape=select_autoescape(default=True)).from_str
 {% if mensaje %}<div class="notice success">✓ {{ mensaje }}</div>{% endif %}{% if error %}<div class="notice error">{{ error }}</div>{% endif %}{% if registro_id %}<div class="notice info">Datos cargados desde Google Sheets.</div>{% endif %}
 <details class="paste-data"><summary>Pegar datos desde Excel (opcional)</summary><form action="/datos/pegar" method="post"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p><label>Datos copiados<textarea name="datos_pegados" rows="9" placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente"></textarea></label><button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button></form></details>
 <form action="/contrato/generar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><details {% if not registro_id %}open{% endif %}><summary>¿Quieres verificar los datos?</summary><p class="hint">Puedes revisar o corregir la información antes de crear el borrador.</p><div class="grid"><label>Nombres *<input name="nombres" required value="{{ datos.nombres }}"></label><label>Apellidos *<input name="apellidos" required value="{{ datos.apellidos }}"></label><label>DNI / Documento *<input name="dni" required value="{{ datos.dni }}"></label><label>Celular<input name="celular" value="{{ datos.celular }}"></label><label>Email *<input name="email" type="email" required value="{{ datos.email }}"></label><label>Ciudad<input name="ciudad" value="{{ datos.ciudad }}"></label><label>País<input name="pais" value="{{ datos.pais }}"></label><label>Monto<input name="monto" value="{{ datos.monto }}"></label><label>Banco *<input name="banco" required value="{{ datos.banco }}"></label><label>Productos<input name="productos" value="{{ datos.productos }}"></label></div><label>Fecha *<input name="fecha" type="date" required value="{{ fecha.isoformat() }}"></label></details><section class="card"><h2>Plantilla del contrato</h2><label>Plantilla guardada<select name="plantilla_guardada"><option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option value="{{ plantilla }}">{{ plantilla }}</option>{% endfor %}</select></label><label>Subir plantilla personalizada<input name="plantilla_personalizada" type="file" accept=".docx"></label><p class="hint">La plantilla subida tiene prioridad sobre la plantilla guardada.</p><button type="submit">GENERAR BORRADOR DE CONTRATO</button></section></form>
-{% if drive_url %}<section class="card"><h2>Borrador listo para revisión</h2><p>El contrato fue guardado como documento editable en Google Drive.</p><a class="drive-button" href="{{ drive_url }}" target="_blank" rel="noopener">ABRIR EN GOOGLE DRIVE</a></section>{% endif %}
+{% if drive_url %}<section class="card"><h2>Borrador listo para revisión</h2><p>El contrato fue guardado como documento editable en Google Drive.</p><a class="drive-button" href="{{ drive_url }}" target="_blank" rel="noopener">ABRIR EN GOOGLE DRIVE</a>{% if editor_configurado %}<a class="drive-button secondary" href="/contrato/editor/{{ registro_id }}">ABRIR EDITOR DE DOCUMENTO</a>{% else %}<p class="hint">Editor de documentos no configurado. Puedes continuar editando desde Google Drive.</p>{% endif %}</section>{% endif %}
 {% if estado_generado or enviado %}<section class="card"><h2>Documento final para firma</h2>{% if enviado %}<div class="notice success">✓ Enviado a firma</div>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id }}"><p><strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}</p><p><strong>Correo:</strong> {{ datos.email }}</p><label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required></label><p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p><button type="submit">APROBAR Y ENVIAR A FIRMA</button></form>{% endif %}</section>{% endif %}
 </main></body></html>""")
 
@@ -78,6 +86,7 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
         "error": error or error_registro,
         "mensaje": mensaje,
         "drive_url": drive_url,
+        "editor_configurado": editor_configurado(ONLYOFFICE_DOCUMENT_SERVER_URL, ONLYOFFICE_URL_SIGNING_SECRET, APP_BASE_URL),
         "enviado": enviado,
     })
     return HTMLResponse(contenido, status_code=status_code)
@@ -154,7 +163,7 @@ async def generar_borrador(
     try:
         documento_drive = subir_docx_como_google_docs(
             crear_servicio_drive(), resultado.contenido, resultado.nombre_archivo,
-            DRIVE_REVIEW_FOLDER_ID,
+            DRIVE_REVIEW_FOLDER_ID, registro_id=registro_id or None,
         )
         drive_url = documento_drive.web_view_link
     except ErrorDrive as error:
@@ -167,6 +176,94 @@ async def generar_borrador(
         mensaje="Borrador generado y guardado en Google Drive." if drive_url else "Borrador generado.",
         error=error_drive, drive_url=drive_url or None,
     )
+
+
+def _editor_habilitado() -> bool:
+    return editor_configurado(ONLYOFFICE_DOCUMENT_SERVER_URL, ONLYOFFICE_URL_SIGNING_SECRET, APP_BASE_URL)
+
+
+def _contrato_generado(registro_id: str) -> dict:
+    registro, error = _obtener_registro(registro_id)
+    if error or registro is None:
+        raise HTTPException(404, "No se encontró el contrato solicitado.")
+    if registro.get("estado") != "Generado":
+        raise HTTPException(409, "El contrato aún no está generado.")
+    return registro
+
+
+@app.get("/contrato/editor/{registro_id}", response_class=HTMLResponse)
+async def abrir_editor(registro_id: str):
+    if not _editor_habilitado():
+        return HTMLResponse("<h1>Editor no configurado</h1><p>Puedes continuar editando el documento desde Google Drive.</p>", status_code=503)
+    _contrato_generado(registro_id)
+    try:
+        documento = obtener_documento_por_registro(crear_servicio_drive(), registro_id)
+    except ErrorDrive:
+        documento = None
+    if documento is None:
+        raise HTTPException(404, "No se encontró el borrador asociado a este registro.")
+    token_documento = crear_token_url(registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="documento")
+    token_callback = crear_token_url(registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="callback", ttl_segundos=24 * 3600)
+    configuracion = {
+        "documentType": "word",
+        "document": {
+            "fileType": "docx", "key": clave_documento(registro_id, documento["id"], documento.get("modifiedTime", "")),
+            "title": documento.get("name", "Contrato") + ".docx",
+            "url": f"{APP_BASE_URL}/api/onlyoffice/document/{registro_id}?token={token_documento}",
+        },
+        "editorConfig": {
+            "mode": "edit",
+            "callbackUrl": f"{APP_BASE_URL}/api/onlyoffice/callback/{registro_id}?token={token_callback}",
+            "user": {"id": f"registro-{registro_id}", "name": "Colaborador"},
+        },
+    }
+    if ONLYOFFICE_JWT_SECRET:
+        configuracion["token"] = crear_jwt(configuracion, ONLYOFFICE_JWT_SECRET)
+    config_json = json.dumps(configuracion).replace("<", "\\u003c")
+    pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>body{{margin:0;font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 100px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{ONLYOFFICE_DOCUMENT_SERVER_URL}/web-apps/apps/api/documents/api.js"></script><script>new DocsAPI.DocEditor("editor", {config_json});</script></body></html>'''
+    return HTMLResponse(pagina)
+
+
+@app.get("/api/onlyoffice/document/{registro_id}")
+async def documento_onlyoffice(registro_id: str, token: str = ""):
+    if not _editor_habilitado() or not validar_token_url(token, registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="documento"):
+        raise HTTPException(403, "Acceso no autorizado.")
+    _contrato_generado(registro_id)
+    try:
+        documento = obtener_documento_por_registro(crear_servicio_drive(), registro_id)
+        if documento is None:
+            raise HTTPException(404, "No se encontró el borrador.")
+        contenido = descargar_google_doc_como_docx(crear_servicio_drive(), documento["id"])
+    except ErrorDrive as error:
+        raise HTTPException(502, "No se pudo obtener el documento para editar.") from error
+    return Response(contenido, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.post("/api/onlyoffice/callback/{registro_id}")
+async def callback_onlyoffice(registro_id: str, request: Request, token: str = ""):
+    if not _editor_habilitado() or not validar_token_url(token, registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="callback"):
+        raise HTTPException(403, "Acceso no autorizado.")
+    _contrato_generado(registro_id)
+    try:
+        evento = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Callback inválido.")
+    jwt_callback = evento.get("token", "") or request.headers.get(ONLYOFFICE_JWT_HEADER, "")
+    if jwt_callback.lower().startswith("bearer "):
+        jwt_callback = jwt_callback[7:]
+    if ONLYOFFICE_JWT_SECRET and not jwt_valido(jwt_callback, ONLYOFFICE_JWT_SECRET):
+        raise HTTPException(403, "Callback no autorizado.")
+    if evento.get("status") not in (2, 6) or not evento.get("url"):
+        return JSONResponse({"error": 0})
+    try:
+        contenido = descargar_docx_editado(evento["url"], ONLYOFFICE_DOCUMENT_SERVER_URL, MAX_DOCX_SIZE_BYTES)
+        documento = obtener_documento_por_registro(crear_servicio_drive(), registro_id)
+        if documento is None:
+            raise ErrorDrive("Documento no encontrado.")
+        reemplazar_google_doc_desde_docx(crear_servicio_drive(), documento["id"], contenido)
+    except (ErrorOnlyOffice, ErrorDrive):
+        return JSONResponse({"error": 1}, status_code=502)
+    return JSONResponse({"error": 0})
 
 
 @app.post("/contrato/enviar", response_class=HTMLResponse)

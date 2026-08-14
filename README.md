@@ -72,3 +72,26 @@ python -m unittest discover -s tests
 ```
 
 Las pruebas no realizan llamadas reales a Google Sheets, Google Drive ni n8n.
+# Editor de documentos (ONLYOFFICE)
+
+La edición DOCX es opcional: FastAPI conserva el contrato en Google Drive y
+ONLYOFFICE Docs se ejecuta como un servicio externo, nunca dentro de Vercel.
+Al generar un contrato asociado a un `registro_id`, la aplicación guarda esa
+asociación en Google Drive y ofrece **Abrir en Drive** y **Abrir editor de
+documento**. ONLYOFFICE descarga un DOCX mediante una URL temporal firmada y,
+cuando informa un guardado (estados 2 o 6), FastAPI descarga la versión editada
+y actualiza el mismo archivo de Drive.
+
+Configura en Vercel, sin subir secretos al repositorio:
+
+```text
+ONLYOFFICE_DOCUMENT_SERVER_URL=https://tu-document-server
+ONLYOFFICE_JWT_SECRET=                 # si el Document Server usa JWT
+ONLYOFFICE_JWT_HEADER=AuthorizationJWT # encabezado configurado en Document Server
+ONLYOFFICE_URL_SIGNING_SECRET=         # secreto aleatorio largo para URLs temporales
+APP_BASE_URL=https://tu-app.vercel.app
+```
+
+Si faltan `ONLYOFFICE_DOCUMENT_SERVER_URL`,
+`ONLYOFFICE_URL_SIGNING_SECRET` o `APP_BASE_URL`, el editor queda deshabilitado
+y el flujo existente de Drive, PDF y n8n continúa funcionando normalmente.
