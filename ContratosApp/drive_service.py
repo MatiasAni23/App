@@ -30,6 +30,7 @@ SCOPES = [
 ]
 MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MIME_GOOGLE_DOC = "application/vnd.google-apps.document"
+MIME_PDF = "application/pdf"
 
 
 class ErrorDrive(Exception):
@@ -267,6 +268,65 @@ def descargar_google_doc_como_docx(servicio, file_id: str) -> bytes:
     except Exception as error:
         LOGGER.warning("No se pudo exportar contrato de Drive: %s", type(error).__name__)
         raise ErrorDrive("No se pudo descargar el contrato desde Google Drive.") from error
+
+
+def obtener_pdf_final_por_registro(servicio, registro_id: str) -> dict | None:
+    """Busca el PDF final persistido para un registro."""
+    registro_escapado = registro_id.replace("'", "\\'")
+    consulta = (
+        "appProperties has { key='registro_id' and value='" + registro_escapado + "' } "
+        "and appProperties has { key='tipo' and value='pdf_final' } "
+        f"and mimeType = '{MIME_PDF}' and trashed = false"
+    )
+    try:
+        respuesta = servicio.files().list(
+            q=consulta, spaces="drive", fields="files(id,name,mimeType,modifiedTime,appProperties)",
+            includeItemsFromAllDrives=True, supportsAllDrives=True,
+        ).execute()
+        archivos = respuesta.get("files", [])
+        return archivos[0] if archivos else None
+    except Exception as error:
+        LOGGER.warning("No se pudo buscar PDF final del registro: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo localizar el PDF final en Google Drive.") from error
+
+
+def guardar_pdf_final(servicio, contenido_pdf: bytes, nombre_archivo: str, folder_id: str, registro_id: str) -> dict:
+    """Crea o reemplaza el PDF final del registro sin usar disco local."""
+    verificar_carpeta(servicio, folder_id)
+    if not contenido_pdf.startswith(b"%PDF"):
+        raise ErrorDrive("El archivo final no es un PDF valido.")
+    nombre = nombre_archivo if nombre_archivo.lower().endswith(".pdf") else f"{nombre_archivo}.pdf"
+    media = MediaIoBaseUpload(BytesIO(contenido_pdf), mimetype=MIME_PDF, resumable=False)
+    try:
+        existente = obtener_pdf_final_por_registro(servicio, registro_id)
+        if existente:
+            return servicio.files().update(
+                fileId=existente["id"], body={"name": nombre}, media_body=media,
+                fields="id,name,mimeType,modifiedTime,appProperties", supportsAllDrives=True,
+            ).execute()
+        return servicio.files().create(
+            body={"name": nombre, "mimeType": MIME_PDF, "parents": [folder_id],
+                  "appProperties": {"registro_id": registro_id, "tipo": "pdf_final"}},
+            media_body=media, fields="id,name,mimeType,modifiedTime,appProperties",
+            supportsAllDrives=True,
+        ).execute()
+    except ErrorDrive:
+        raise
+    except Exception as error:
+        LOGGER.warning("No se pudo guardar PDF final en Drive: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo guardar el PDF final en Google Drive.") from error
+
+
+def descargar_pdf_final(servicio, file_id: str) -> bytes:
+    """Recupera el PDF final persistido en Google Drive."""
+    try:
+        contenido = servicio.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+    except Exception as error:
+        LOGGER.warning("No se pudo descargar PDF final de Drive: %s", type(error).__name__)
+        raise ErrorDrive("No se pudo obtener el PDF final desde Google Drive.") from error
+    if not isinstance(contenido, bytes) or not contenido.startswith(b"%PDF"):
+        raise ErrorDrive("El PDF final almacenado no es valido.")
+    return contenido
 
 
 def reemplazar_google_doc_desde_docx(servicio, file_id: str, contenido_docx: bytes) -> dict:

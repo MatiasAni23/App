@@ -13,7 +13,7 @@ from config import (APP_BASE_URL, DRIVE_REVIEW_FOLDER_ID, MAX_DOCX_SIZE_BYTES, M
                     N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL, ONLYOFFICE_DOCUMENT_SERVER_URL,
                     ONLYOFFICE_JWT_HEADER, ONLYOFFICE_JWT_SECRET, ONLYOFFICE_URL_SIGNING_SECRET)
 from drive_service import (ErrorDrive, crear_servicio_drive, descargar_google_doc_como_docx,
-                           obtener_credenciales, obtener_documento_por_registro,
+                           obtener_credenciales, obtener_documento_por_registro, obtener_url_documento,
                            reemplazar_google_doc_desde_docx, subir_docx_como_google_docs)
 from generador import generar_contrato
 from modelos import DatosContrato
@@ -79,6 +79,14 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
             enviado: bool = False, status_code: int = 200):
     registro, error_registro = _obtener_registro(registro_id) if datos is None else (None, None)
     datos_finales = datos or registro or _datos_vacios()
+    documento_drive = None
+    if registro_id and datos_finales.get("estado") == "Generado":
+        try:
+            documento_drive = obtener_documento_por_registro(crear_servicio_drive(), registro_id)
+            if documento_drive and not drive_url:
+                drive_url = obtener_url_documento(documento_drive)
+        except ErrorDrive:
+            documento_drive = None
     contenido = PAGE_TEMPLATE.render({
         "registro_id": registro_id,
         "datos": datos_finales,
@@ -219,12 +227,40 @@ async def abrir_editor(registro_id: str):
             "mode": "edit",
             "callbackUrl": f"{APP_BASE_URL}/api/onlyoffice/callback/{registro_id}?token={token_callback}",
             "user": {"id": f"registro-{registro_id}", "name": "Colaborador"},
+            # El boton Guardar de ONLYOFFICE dispara el callback status=6.
+            # Ahi se guarda el DOCX y se crea el PDF listo para firma.
+            "customization": {"forcesave": True},
         },
     }
     if ONLYOFFICE_JWT_SECRET:
         configuracion["token"] = crear_jwt(configuracion, ONLYOFFICE_JWT_SECRET)
     config_json = json.dumps(configuracion).replace("<", "\\u003c")
     pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>html,body{{height:100%;margin:0}}body{{font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed;height:150px;box-sizing:border-box}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 150px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{url_api_javascript(ONLYOFFICE_DOCUMENT_SERVER_URL)}"></script><script>const config = {config_json}; config.events = {{ onError: function(event) {{ console.error("ONLYOFFICE error", event); document.getElementById("editor").textContent = "No fue posible mostrar el documento en ONLYOFFICE (código " + (event.data && event.data.errorCode || "desconocido") + "). Puedes continuar desde Google Drive."; }} }}; if (window.DocsAPI) {{ new DocsAPI.DocEditor("editor", config); }} else {{ document.getElementById("editor").textContent = "No fue posible cargar el editor. Puedes continuar desde Google Drive."; }}</script></body></html>'''
+    pagina = pagina.replace(
+        "</header>",
+        '<button id="download-pdf" type="button">DESCARGAR PDF</button></header>',
+    )
+    pagina = pagina.replace(
+        f'<a href="/?registro={registro_id}">',
+        f'<a id="back-to-contract" href="/?registro={registro_id}">',
+    )
+    pagina = pagina.replace(
+        'if (window.DocsAPI) { new DocsAPI.DocEditor("editor", config); }',
+        'var returnAfterDownload = false; var pdfWindow = null; '
+        'config.events.onDownloadAs = function(event) { if (!(event.data && event.data.url)) return; '
+        'if (pdfWindow) { pdfWindow.location = event.data.url; } else { window.open(event.data.url, "_blank"); } '
+        f'if (returnAfterDownload) window.setTimeout(function() {{ window.location.href = "/?registro={registro_id}"; }}, 250); }}; '
+        'if (window.DocsAPI) { window.docEditor = new DocsAPI.DocEditor("editor", config); '
+        'document.getElementById("download-pdf").onclick = function() { window.docEditor.downloadAs("pdf"); }; }',
+    )
+    pagina = pagina.replace(
+        '</script></body>',
+        f'''<script>document.getElementById("back-to-contract").onclick = function(event) {{
+            event.preventDefault(); returnAfterDownload = true; pdfWindow = window.open("", "_blank");
+            window.docEditor.downloadAs("pdf");
+            window.setTimeout(function() {{ if (returnAfterDownload) window.location.href = "/?registro={registro_id}"; }}, 3500);
+        }};</script></body>''',
+    )
     return HTMLResponse(pagina)
 
 
@@ -250,7 +286,13 @@ async def documento_onlyoffice(registro_id: str, token: str = ""):
 async def callback_onlyoffice(registro_id: str, request: Request, token: str = ""):
     if not _editor_habilitado() or not validar_token_url(token, registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="callback"):
         raise HTTPException(403, "Acceso no autorizado.")
-    _contrato_generado(registro_id)
+    registro, error_registro = _obtener_registro(registro_id)
+    if error_registro or registro is None:
+        raise HTTPException(404, "No se encontrÃ³ el contrato solicitado.")
+    # ONLYOFFICE puede repetir callbacks. Si ya fue enviado, confirmamos sin
+    # volver a crear otra solicitud de firma.
+    if registro.get("estado") != "Generado":
+        return JSONResponse({"error": 0})
     try:
         evento = await request.json()
     except ValueError:
@@ -272,7 +314,9 @@ async def callback_onlyoffice(registro_id: str, request: Request, token: str = "
         if documento is None:
             raise ErrorDrive("Documento no encontrado.")
         reemplazar_google_doc_desde_docx(crear_servicio_drive(), documento["id"], contenido)
-    except (ErrorOnlyOffice, ErrorDrive):
+        LOGGER.info("Contrato actualizado desde ONLYOFFICE: registro_id=%s", registro_id)
+    except (ErrorOnlyOffice, ErrorDrive) as error:
+        LOGGER.warning("No se pudo guardar la edicion: registro_id=%s tipo=%s", registro_id, type(error).__name__)
         return JSONResponse({"error": 1}, status_code=502)
     return JSONResponse({"error": 0})
 
@@ -294,4 +338,8 @@ async def enviar_a_firma(request: Request, registro_id: str = Form(""), pdf_fina
         )
     except ErrorN8N as error_n8n:
         return _render(request, registro_id=registro_id, error=str(error_n8n), status_code=422)
+    try:
+        actualizar_estado_contrato(crear_servicio_sheets(obtener_credenciales()), registro_id, "Enviado")
+    except (ErrorDrive, ErrorSheets) as error_estado:
+        return _render(request, registro_id=registro_id, error=str(error_estado), status_code=502)
     return _render(request, registro_id=registro_id, mensaje=resultado.mensaje, enviado=True)

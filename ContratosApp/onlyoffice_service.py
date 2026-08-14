@@ -104,3 +104,66 @@ def descargar_docx_editado(url: str, document_server_url: str, max_bytes: int) -
     if len(contenido) < 4 or contenido[:2] != b"PK":
         raise ErrorOnlyOffice("ONLYOFFICE no entregó un DOCX válido.")
     return contenido
+
+
+def convertir_docx_a_pdf(
+    url_docx: str, document_server_url: str, clave: str, titulo: str,
+    jwt_secret: str = "", max_bytes: int = 20 * 1024 * 1024,
+) -> bytes:
+    """Convierte el DOCX guardado por ONLYOFFICE a PDF mediante su Conversion API."""
+    origen, destino = urlparse(document_server_url), urlparse(url_docx)
+    if (
+        origen.scheme not in {"https", "http"} or not origen.netloc
+        or destino.scheme not in {"https", "http"} or destino.netloc != origen.netloc
+    ):
+        raise ErrorOnlyOffice("La URL del documento editado no es valida.")
+
+    carga = {
+        "async": False,
+        "filetype": "docx",
+        "key": clave,
+        "outputtype": "pdf",
+        "title": titulo if titulo.lower().endswith(".docx") else f"{titulo}.docx",
+        "url": url_docx,
+    }
+    if jwt_secret:
+        # Con JWT habilitado, ONLYOFFICE exige que el payload vaya firmado.
+        carga = {"token": crear_jwt(carga, jwt_secret)}
+    try:
+        with httpx.Client(timeout=70, follow_redirects=False) as cliente:
+            respuesta = cliente.post(
+                document_server_url.rstrip("/") + f"/converter?shardkey={clave}",
+                json=carga,
+                headers={"Accept": "application/json"},
+            )
+            respuesta.raise_for_status()
+            resultado = respuesta.json()
+    except (httpx.HTTPError, ValueError) as error:
+        raise ErrorOnlyOffice("No se pudo convertir el documento editado a PDF.") from error
+    if not isinstance(resultado, dict) or resultado.get("error") or not resultado.get("endConvert"):
+        raise ErrorOnlyOffice("ONLYOFFICE no pudo completar la conversion a PDF.")
+    url_pdf = resultado.get("fileUrl")
+    if not isinstance(url_pdf, str) or not url_pdf:
+        raise ErrorOnlyOffice("ONLYOFFICE no entrego el PDF convertido.")
+
+    destino_pdf = urlparse(url_pdf)
+    if destino_pdf.scheme not in {"https", "http"} or destino_pdf.netloc != origen.netloc:
+        raise ErrorOnlyOffice("La URL del PDF convertido no es valida.")
+    try:
+        with httpx.Client(timeout=30, follow_redirects=False) as cliente:
+            with cliente.stream("GET", url_pdf) as respuesta:
+                respuesta.raise_for_status()
+                partes, tamano = [], 0
+                for parte in respuesta.iter_bytes():
+                    tamano += len(parte)
+                    if tamano > max_bytes:
+                        raise ErrorOnlyOffice("El PDF convertido excede el tamaÃ±o permitido.")
+                    partes.append(parte)
+        contenido = b"".join(partes)
+    except ErrorOnlyOffice:
+        raise
+    except httpx.HTTPError as error:
+        raise ErrorOnlyOffice("No se pudo descargar el PDF convertido.") from error
+    if len(contenido) < 5 or not contenido.startswith(b"%PDF"):
+        raise ErrorOnlyOffice("ONLYOFFICE no entrego un PDF valido.")
+    return contenido
