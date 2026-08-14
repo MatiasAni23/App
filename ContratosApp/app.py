@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 import json
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -27,6 +28,7 @@ from utils import email_valido, fecha_hoy, parsear_datos_pegados
 BASE_DIR = Path(__file__).resolve().parent
 DIRECTORIO_PLANTILLAS = BASE_DIR / "plantillas"
 app = FastAPI(title="Generación de borradores de contrato")
+LOGGER = logging.getLogger(__name__)
 
 
 PAGE_TEMPLATE = Environment(autoescape=select_autoescape(default=True)).from_string("""<!doctype html>
@@ -236,7 +238,10 @@ async def documento_onlyoffice(registro_id: str, token: str = ""):
         contenido = descargar_google_doc_como_docx(crear_servicio_drive(), documento["id"])
     except ErrorDrive as error:
         raise HTTPException(502, "No se pudo obtener el documento para editar.") from error
-    return Response(contenido, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    return Response(
+        contenido, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'attachment; filename="contrato.docx"'},
+    )
 
 
 @app.post("/api/onlyoffice/callback/{registro_id}")
@@ -253,6 +258,10 @@ async def callback_onlyoffice(registro_id: str, request: Request, token: str = "
         jwt_callback = jwt_callback[7:]
     if ONLYOFFICE_JWT_SECRET and not jwt_valido(jwt_callback, ONLYOFFICE_JWT_SECRET):
         raise HTTPException(403, "Callback no autorizado.")
+    LOGGER.info(
+        "ONLYOFFICE callback: registro_id=%s status=%s tiene_url=%s",
+        registro_id, evento.get("status"), bool(evento.get("url")),
+    )
     if evento.get("status") not in (2, 6) or not evento.get("url"):
         return JSONResponse({"error": 0})
     try:

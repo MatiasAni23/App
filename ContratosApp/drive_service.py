@@ -259,7 +259,7 @@ def descargar_google_doc_como_docx(servicio, file_id: str) -> bytes:
     """Exporta un Google Docs a DOCX en memoria."""
     try:
         contenido = servicio.files().export_media(fileId=file_id, mimeType=MIME_DOCX).execute()
-        if not isinstance(contenido, bytes) or not contenido:
+        if not isinstance(contenido, bytes) or len(contenido) < 4 or contenido[:2] != b"PK":
             raise ErrorDrive("El documento de Google Drive no contiene un DOCX vÃ¡lido.")
         return contenido
     except ErrorDrive:
