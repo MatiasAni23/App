@@ -19,7 +19,7 @@ from modelos import DatosContrato
 from n8n_service import ErrorN8N, enviar_pdf_a_firma
 from onlyoffice_service import (ErrorOnlyOffice, clave_documento, crear_jwt, crear_token_url,
                                 descargar_docx_editado, editor_configurado, jwt_valido,
-                                validar_token_url)
+                                url_api_javascript, validar_token_url)
 from sheets_service import ErrorSheets, actualizar_estado_contrato, crear_servicio_sheets, obtener_contrato_pendiente
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
 
@@ -220,7 +220,7 @@ async def abrir_editor(registro_id: str):
     if ONLYOFFICE_JWT_SECRET:
         configuracion["token"] = crear_jwt(configuracion, ONLYOFFICE_JWT_SECRET)
     config_json = json.dumps(configuracion).replace("<", "\\u003c")
-    pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>body{{margin:0;font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 100px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{ONLYOFFICE_DOCUMENT_SERVER_URL}/web-apps/apps/api/documents/api.js"></script><script>new DocsAPI.DocEditor("editor", {config_json});</script></body></html>'''
+    pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>body{{margin:0;font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 100px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{url_api_javascript(ONLYOFFICE_DOCUMENT_SERVER_URL)}"></script><script>if (window.DocsAPI) {{ new DocsAPI.DocEditor("editor", {config_json}); }} else {{ document.getElementById("editor").textContent = "No fue posible cargar el editor. Puedes continuar desde Google Drive."; }}</script></body></html>'''
     return HTMLResponse(pagina)
 
 

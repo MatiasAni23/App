@@ -16,6 +16,15 @@ class ErrorOnlyOffice(Exception):
     """Error seguro para mostrar al usuario sin revelar secretos."""
 
 
+RUTA_API_JS = "/web-apps/apps/api/documents/api.js"
+
+
+def url_api_javascript(document_server_url: str) -> str:
+    """Acepta URL base del Document Server o la URL completa de api.js."""
+    url = document_server_url.rstrip("/")
+    return url if url.endswith(RUTA_API_JS) else url + RUTA_API_JS
+
+
 def editor_configurado(document_server_url: str, signing_secret: str, app_base_url: str) -> bool:
     return bool(document_server_url and signing_secret and app_base_url)
 
