@@ -1,5 +1,8 @@
 {
   "functions": {
+    "app.py": {
+      "includeFiles": "**"
+    },
     "api/index.py": {
       "includeFiles": "**"
     }
