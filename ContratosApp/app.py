@@ -7,8 +7,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, select_autoescape
 
 from config import DRIVE_REVIEW_FOLDER_ID, MAX_PDF_SIZE_BYTES, N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL
 from drive_service import ErrorDrive, crear_servicio_drive, obtener_credenciales, subir_docx_como_google_docs
@@ -22,8 +21,18 @@ from utils import email_valido, fecha_hoy, parsear_datos_pegados
 BASE_DIR = Path(__file__).resolve().parent
 DIRECTORIO_PLANTILLAS = BASE_DIR / "plantillas"
 app = FastAPI(title="Generación de borradores de contrato")
-app.mount("/public", StaticFiles(directory=BASE_DIR / "public"), name="public")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+PAGE_TEMPLATE = Environment(autoescape=select_autoescape(default=True)).from_string("""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generación de borradores de contrato</title><style>
+:root{font-family:Inter,system-ui,sans-serif;color:#18212f;background:#f7f9fc}.container{max-width:900px;margin:0 auto;padding:48px 20px}h1{font-size:2.2rem;margin:0 0 28px}h2{font-size:1.1rem;margin-top:0}.card,details{background:#fff;border:1px solid #dce3ed;border-radius:12px;padding:22px;margin:20px 0}summary{font-weight:700;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}label{display:grid;gap:7px;font-weight:600;margin:14px 0}input,select,textarea{border:1px solid #cbd5e1;border-radius:8px;padding:10px;font:inherit;background:#fff}textarea{resize:vertical;min-height:160px}button{width:100%;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;padding:13px;cursor:pointer;margin-top:10px}.secondary{background:#fff;color:#1d4ed8;border:1px solid #bfdbfe}.hint{color:#64748b;font-size:.9rem}.notice{padding:12px 14px;border-radius:8px;margin:14px 0}.success{background:#dcfce7;color:#166534}.error{background:#fee2e2;color:#991b1b}.info{background:#dbeafe;color:#1e40af}@media(max-width:640px){.grid{grid-template-columns:1fr}.container{padding:28px 14px}}
+</style></head><body><main class="container"><h1>Generación de borradores de contrato</h1>
+{% if mensaje %}<div class="notice success">✓ {{ mensaje }}</div>{% endif %}{% if error %}<div class="notice error">{{ error }}</div>{% endif %}{% if registro_id %}<div class="notice info">Datos cargados desde Google Sheets.</div>{% endif %}
+<details class="paste-data"><summary>Pegar datos desde Excel (opcional)</summary><form action="/datos/pegar" method="post"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p><label>Datos copiados<textarea name="datos_pegados" rows="9" placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente"></textarea></label><button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button></form></details>
+<form action="/contrato/generar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id or '' }}"><details {% if not registro_id %}open{% endif %}><summary>¿Quieres verificar los datos?</summary><p class="hint">Puedes revisar o corregir la información antes de crear el borrador.</p><div class="grid"><label>Nombres *<input name="nombres" required value="{{ datos.nombres }}"></label><label>Apellidos *<input name="apellidos" required value="{{ datos.apellidos }}"></label><label>DNI / Documento *<input name="dni" required value="{{ datos.dni }}"></label><label>Celular<input name="celular" value="{{ datos.celular }}"></label><label>Email *<input name="email" type="email" required value="{{ datos.email }}"></label><label>Ciudad<input name="ciudad" value="{{ datos.ciudad }}"></label><label>País<input name="pais" value="{{ datos.pais }}"></label><label>Monto<input name="monto" value="{{ datos.monto }}"></label><label>Banco *<input name="banco" required value="{{ datos.banco }}"></label><label>Productos<input name="productos" value="{{ datos.productos }}"></label></div><label>Fecha *<input name="fecha" type="date" required value="{{ fecha.isoformat() }}"></label></details><section class="card"><h2>Plantilla del contrato</h2><label>Plantilla guardada<select name="plantilla_guardada"><option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option value="{{ plantilla }}">{{ plantilla }}</option>{% endfor %}</select></label><label>Subir plantilla personalizada<input name="plantilla_personalizada" type="file" accept=".docx"></label><p class="hint">La plantilla subida tiene prioridad sobre la plantilla guardada.</p><button type="submit">GENERAR BORRADOR DE CONTRATO</button></section></form>
+{% if estado_generado or enviado %}<section class="card"><h2>Documento final para firma</h2>{% if enviado %}<div class="notice success">✓ Enviado a firma</div>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data"><input type="hidden" name="registro_id" value="{{ registro_id }}"><p><strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}</p><p><strong>Correo:</strong> {{ datos.email }}</p><label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required></label><p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p><button type="submit">APROBAR Y ENVIAR A FIRMA</button></form>{% endif %}</section>{% endif %}
+</main></body></html>""")
 
 
 def _plantillas_disponibles() -> list[Path]:
@@ -60,7 +69,7 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
             error: str | None = None, mensaje: str | None = None, enviado: bool = False, status_code: int = 200):
     registro, error_registro = _obtener_registro(registro_id) if datos is None else (None, None)
     datos_finales = datos or registro or _datos_vacios()
-    return templates.TemplateResponse(request, "index.html", {
+    contenido = PAGE_TEMPLATE.render({
         "registro_id": registro_id,
         "datos": datos_finales,
         "fecha": _fecha(datos_finales.get("fecha", "")) if datos_finales else fecha_hoy(),
@@ -69,7 +78,8 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
         "error": error or error_registro,
         "mensaje": mensaje,
         "enviado": enviado,
-    }, status_code=status_code)
+    })
+    return HTMLResponse(contenido, status_code=status_code)
 
 
 @app.get("/", response_class=HTMLResponse)
