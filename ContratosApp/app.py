@@ -208,6 +208,8 @@ async def abrir_editor(registro_id: str):
     token_callback = crear_token_url(registro_id, ONLYOFFICE_URL_SIGNING_SECRET, proposito="callback", ttl_segundos=24 * 3600)
     configuracion = {
         "documentType": "word",
+        "width": "100%",
+        "height": "100%",
         "document": {
             "fileType": "docx", "key": clave_documento(registro_id, documento["id"], documento.get("modifiedTime", "")),
             "title": documento.get("name", "Contrato") + ".docx",
@@ -222,7 +224,7 @@ async def abrir_editor(registro_id: str):
     if ONLYOFFICE_JWT_SECRET:
         configuracion["token"] = crear_jwt(configuracion, ONLYOFFICE_JWT_SECRET)
     config_json = json.dumps(configuracion).replace("<", "\\u003c")
-    pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>body{{margin:0;font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 100px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{url_api_javascript(ONLYOFFICE_DOCUMENT_SERVER_URL)}"></script><script>if (window.DocsAPI) {{ new DocsAPI.DocEditor("editor", {config_json}); }} else {{ document.getElementById("editor").textContent = "No fue posible cargar el editor. Puedes continuar desde Google Drive."; }}</script></body></html>'''
+    pagina = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Editar contrato</title><style>html,body{{height:100%;margin:0}}body{{font-family:system-ui;background:#f7f9fc;color:#18212f}}header{{padding:16px 24px;background:#fff;border-bottom:1px solid #dce3ed;height:150px;box-sizing:border-box}}a{{color:#1d4ed8;text-decoration:none}}#editor{{height:calc(100vh - 150px);min-height:650px}}</style></head><body><header><a href="/?registro={registro_id}">← Volver al contrato</a><h1>Editar contrato</h1><p>Estado: Generado</p></header><div id="editor">Cargando editor...</div><script src="{url_api_javascript(ONLYOFFICE_DOCUMENT_SERVER_URL)}"></script><script>const config = {config_json}; config.events = {{ onError: function(event) {{ console.error("ONLYOFFICE error", event); document.getElementById("editor").textContent = "No fue posible mostrar el documento en ONLYOFFICE (código " + (event.data && event.data.errorCode || "desconocido") + "). Puedes continuar desde Google Drive."; }} }}; if (window.DocsAPI) {{ new DocsAPI.DocEditor("editor", config); }} else {{ document.getElementById("editor").textContent = "No fue posible cargar el editor. Puedes continuar desde Google Drive."; }}</script></body></html>'''
     return HTMLResponse(pagina)
 
 
