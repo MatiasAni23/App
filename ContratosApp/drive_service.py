@@ -65,11 +65,16 @@ def obtener_credenciales(
     credentials_path: Path = CREDENTIALS_PATH, token_path: Path = TOKEN_PATH
 ) -> Credentials:
     """Carga, renueva o solicita OAuth local y guarda el token sin registrarlo."""
+    credenciales = _obtener_credenciales_desde_secreto()
+    token_desde_secreto = credenciales is not None
+    # Conserva compatibilidad con el OAuth que ya usaba la aplicación. Si ambos
+    # secretos existen, el token OAuth explícito tiene prioridad sobre una
+    # Service Account residual o configurada para otro entorno.
+    if credenciales:
+        return credenciales
     credenciales = _obtener_credenciales_service_account()
     if credenciales:
         return credenciales
-    credenciales = _obtener_credenciales_desde_secreto()
-    token_desde_secreto = credenciales is not None
     if credenciales is None and token_path.exists():
         try:
             credenciales = Credentials.from_authorized_user_file(token_path, SCOPES)
