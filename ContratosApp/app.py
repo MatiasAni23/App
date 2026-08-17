@@ -228,7 +228,9 @@ async def abrir_editor(registro_id: str):
         "editorConfig": {
             "mode": "edit",
             "callbackUrl": f"{APP_BASE_URL}/api/onlyoffice/callback/{registro_id}?token={token_callback}",
-            "user": {"id": f"registro-{registro_id}", "name": "Colaborador"},
+            # Esta aplicación tiene un único operador. Un ID fijo evita que
+            # ONLYOFFICE contabilice cada contrato abierto como otro usuario.
+            "user": {"id": "operador-principal", "name": "Operador principal"},
             # El boton Guardar de ONLYOFFICE dispara el callback status=6.
             # Ahi se guarda el DOCX y se crea el PDF listo para firma.
             "customization": {"forcesave": True},
