@@ -13,7 +13,11 @@ pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 
-Abra `http://localhost:8000` o `http://localhost:8000/?registro=UUID`.
+En producción, la aplicación sólo se abre mediante el enlace temporal generado
+por Apps Script. Abrir el dominio o `/?registro=UUID` directamente devuelve
+403. Para probar el flujo local se debe configurar el mismo secreto en Apps
+Script y en el entorno local; la cookie es `Secure`, por lo que el flujo real
+debe probarse sobre HTTPS.
 
 Para desarrollo local se conserva el OAuth existente con `credentials.json` y
 `token.json` junto a `ContratosApp/app.py`. Ambos archivos son privados y están
@@ -40,7 +44,13 @@ SPREADSHEET_ID
 DRIVE_REVIEW_FOLDER_ID
 N8N_ZAPSIGN_WEBHOOK_URL
 N8N_WEBHOOK_SECRET
+APP_ACCESS_SECRET
 ```
+
+`APP_ACCESS_SECRET` debe ser un secreto aleatorio largo. Configure exactamente
+el mismo valor como variable de entorno en Vercel y como Script Property en
+Apps Script con el nombre `APP_ACCESS_SECRET`. No lo incluya en el código ni
+lo envíe al navegador.
 
 En producción, configure `GOOGLE_SERVICE_ACCOUNT_JSON` con el JSON completo de
 una Service Account. Comparta la hoja de cálculo y la carpeta de Drive con el
@@ -58,11 +68,31 @@ a autorizar. No lo elimine desde código.
 3. Añada las variables de entorno indicadas arriba en Vercel.
 4. Despliegue. Vercel detectará la instancia `app = FastAPI()` de `app.py`; no
    se requiere Dockerfile ni `vercel.json` para esta estructura.
-5. Actualice la URL de Apps Script desde la antigua URL Streamlit a:
+5. Configure `APP_ACCESS_SECRET` y actualice Apps Script para usar la ruta
+    temporal `/access`:
 
-   ```text
-   https://TU-PROYECTO.vercel.app/?registro=UUID
-   ```
+    ```javascript
+    function generarTokenAcceso_(registroId, expiracion) {
+       const secreto = PropertiesService.getScriptProperties().getProperty('APP_ACCESS_SECRET');
+       if (!secreto) throw new Error('Falta Script Property APP_ACCESS_SECRET');
+       const firma = Utilities.computeHmacSha256Signature(`${registroId}:${expiracion}`, secreto);
+       return firma.map(byte => {
+          const valor = byte < 0 ? byte + 256 : byte;
+          return ('0' + valor.toString(16)).slice(-2);
+       }).join('');
+    }
+
+    const expiracion = Math.floor(Date.now() / 1000) + 30 * 60;
+    const token = generarTokenAcceso_(registroId, expiracion);
+    const baseUrl = CONFIG.STREAMLIT_URL.replace(/\/+$/, '');
+    const url = `${baseUrl}/access?` +
+       `registro=${encodeURIComponent(registroId)}` +
+       `&exp=${expiracion}` +
+       `&token=${encodeURIComponent(token)}`;
+    ```
+
+    Sustituya con este bloque sólo la construcción de la URL actual. Mantenga
+    la creación del UUID y el resto del flujo sin cambios.
 
 ## Pruebas
 

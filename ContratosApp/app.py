@@ -4,15 +4,17 @@ from datetime import date, datetime
 import json
 import logging
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, select_autoescape
 
 from config import (APP_BASE_URL, DRIVE_REVIEW_FOLDER_ID, MAX_DOCX_SIZE_BYTES, MAX_PDF_SIZE_BYTES,
                     N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL, ONLYOFFICE_DOCUMENT_SERVER_URL,
-                    ONLYOFFICE_JWT_HEADER, ONLYOFFICE_JWT_SECRET, ONLYOFFICE_URL_SIGNING_SECRET)
+                    ONLYOFFICE_JWT_HEADER, ONLYOFFICE_JWT_SECRET, ONLYOFFICE_URL_SIGNING_SECRET,
+                    APP_ACCESS_SECRET)
 from drive_service import (ErrorDrive, crear_servicio_drive, descargar_google_doc_como_docx,
                            obtener_credenciales, obtener_documento_por_registro, obtener_url_documento,
                            reemplazar_google_doc_desde_docx, subir_docx_como_google_docs)
@@ -24,6 +26,8 @@ from onlyoffice_service import (ErrorOnlyOffice, clave_documento, crear_jwt, cre
                                 url_api_javascript, validar_token_url)
 from sheets_service import ErrorSheets, actualizar_estado_contrato, crear_servicio_sheets, obtener_contrato_pendiente
 from utils import email_valido, fecha_hoy, parsear_datos_pegados
+from security import (SESSION_COOKIE_NAME, crear_cookie_sesion, registro_desde_cookie,
+                      registro_valido, token_acceso_valido)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -31,6 +35,7 @@ DIRECTORIO_PLANTILLAS = BASE_DIR / "plantillas"
 app = FastAPI(title="Generación de borradores de contrato")
 app.mount("/assets", StaticFiles(directory=BASE_DIR / "assets"), name="assets")
 LOGGER = logging.getLogger(__name__)
+UNAUTHORIZED_HTML = """<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Acceso no autorizado</title></head><body><h1>Acceso no autorizado</h1><p>Este sistema debe abrirse desde el formulario de gestión de contratos.</p></body></html>"""
 
 
 PAGE_TEMPLATE = Environment(autoescape=select_autoescape(default=True)).from_string("""<!doctype html>
@@ -78,6 +83,19 @@ def _obtener_registro(registro_id: str | None) -> tuple[dict[str, str] | None, s
     return registro, None
 
 
+def _registro_autorizado(request: Request, registro_id: str | None) -> str:
+    registro_sesion = registro_desde_cookie(request.cookies.get(SESSION_COOKIE_NAME), APP_ACCESS_SECRET)
+    if not registro_sesion or not registro_id or registro_sesion != registro_id:
+        raise HTTPException(403, "Acceso no autorizado.")
+    return registro_sesion
+
+
+def _registro_sesion_o_403(request: Request, registro_id: str | None) -> str:
+    if not APP_ACCESS_SECRET:
+        raise HTTPException(403, "Acceso no autorizado.")
+    return _registro_autorizado(request, registro_id)
+
+
 def _render(request: Request, *, registro_id: str | None = None, datos: dict[str, str] | None = None,
             error: str | None = None, mensaje: str | None = None, drive_url: str | None = None,
             enviado: bool = False, status_code: int = 200):
@@ -110,7 +128,33 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
 
 @app.get("/", response_class=HTMLResponse)
 async def inicio(request: Request, registro: str | None = None):
+    try:
+        _registro_sesion_o_403(request, registro)
+    except HTTPException:
+        return HTMLResponse(UNAUTHORIZED_HTML, status_code=403)
     return _render(request, registro_id=registro)
+
+
+@app.get("/access")
+async def acceso_temporal(registro: str = "", exp: str = "", token: str = ""):
+    if not APP_ACCESS_SECRET or not registro_valido(registro):
+        raise HTTPException(403, "Acceso no autorizado.")
+    if not token_acceso_valido(registro, exp, token, APP_ACCESS_SECRET):
+        raise HTTPException(403, "Acceso no autorizado.")
+    registro_encontrado, _ = _obtener_registro(registro)
+    if registro_encontrado is None:
+        raise HTTPException(403, "Acceso no autorizado.")
+    expiracion = int(exp)
+    respuesta = RedirectResponse(
+        "/?" + urlencode({"registro": registro}), status_code=303,
+    )
+    respuesta.set_cookie(
+        SESSION_COOKIE_NAME,
+        crear_cookie_sesion(registro, expiracion, APP_ACCESS_SECRET),
+        max_age=max(1, expiracion - int(datetime.now().timestamp())),
+        httponly=True, secure=True, samesite="lax", path="/",
+    )
+    return respuesta
 
 
 @app.post("/datos/pegar", response_class=HTMLResponse)
@@ -118,6 +162,7 @@ async def cargar_datos_pegados(
     request: Request, datos_pegados: str = Form(""), registro_id: str = Form("")
 ):
     """Clasifica las filas copiadas desde Excel y las deja listas para revisar."""
+    _registro_sesion_o_403(request, registro_id)
     campos, no_reconocidas = parsear_datos_pegados(datos_pegados)
     if not campos:
         return _render(
@@ -145,6 +190,7 @@ async def generar_borrador(
     pais: str = Form(""), monto: str = Form(""), banco: str = Form(""), productos: str = Form(""),
     fecha: str = Form(""), plantilla_guardada: str = Form(""), plantilla_personalizada: UploadFile | None = File(None),
 ):
+    _registro_sesion_o_403(request, registro_id)
     datos_formulario = {"nombres": nombres, "apellidos": apellidos, "dni": dni, "celular": celular, "email": email,
                         "ciudad": ciudad, "pais": pais, "monto": monto, "banco": banco, "productos": productos, "fecha": fecha}
     if not all((nombres.strip(), apellidos.strip(), dni.strip(), banco.strip())) or not email_valido(email):
@@ -208,7 +254,8 @@ def _contrato_generado(registro_id: str) -> dict:
 
 
 @app.get("/contrato/editor/{registro_id}", response_class=HTMLResponse)
-async def abrir_editor(registro_id: str):
+async def abrir_editor(request: Request, registro_id: str):
+    _registro_sesion_o_403(request, registro_id)
     if not _editor_habilitado():
         return HTMLResponse("<h1>Editor no configurado</h1><p>Puedes continuar editando el documento desde Google Drive.</p>", status_code=503)
     _contrato_generado(registro_id)
@@ -329,6 +376,7 @@ async def callback_onlyoffice(registro_id: str, request: Request, token: str = "
 
 @app.post("/contrato/enviar", response_class=HTMLResponse)
 async def enviar_a_firma(request: Request, registro_id: str = Form(""), pdf_final: UploadFile = File(...)):
+    _registro_sesion_o_403(request, registro_id)
     registro, error = _obtener_registro(registro_id)
     if error or registro is None:
         return _render(request, registro_id=registro_id or None, error=error or "No se encontró el contrato para enviar.", status_code=404)
