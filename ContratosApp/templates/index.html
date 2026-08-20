@@ -8,14 +8,14 @@
   <link rel="stylesheet" href="/assets/css/styles.css">
 </head>
 
-<body>
+<body data-workflow-step="{{ 3 if enviado else (2 if estado_generado else 1) }}">
   <header class="workflow-header">
     <nav class="stepper" aria-label="Progreso del contrato">
-      <div class="step {% if estado_generado %}complete{% else %}active{% endif %}"><span class="step-marker">{% if estado_generado %}✓{% else %}1{% endif %}</span><span>Ingreso de datos</span></div>
+      <div class="step" data-step-indicator="1"><span class="step-marker">1</span><span>Ingreso de datos</span></div>
       <span class="step-line"></span>
-      <div class="step {% if enviado %}complete{% elif estado_generado %}active{% endif %}"><span class="step-marker">{% if enviado %}✓{% else %}2{% endif %}</span><span>Generar contrato</span></div>
+      <div class="step" data-step-indicator="2"><span class="step-marker">2</span><span>Generar contrato</span></div>
       <span class="step-line"></span>
-      <div class="step {% if enviado %}active{% endif %}"><span class="step-marker">3</span><span>Enviar a firma</span></div>
+      <div class="step" data-step-indicator="3"><span class="step-marker">3</span><span>Enviar a firma</span></div>
     </nav>
   </header>
   <main class="container workflow-shell">
@@ -27,7 +27,7 @@
       <div class="stage-layout">
     <aside class="paste-data side-panel">
       <h2>PEGAR DATOS</h2>
-      <form action="/datos/pegar" method="post">
+      <form id="paste-data-form" action="/datos/pegar" method="post">
         <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
         <p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p>
         <label>Datos copiados<textarea name="datos_pegados" rows="9"
@@ -71,7 +71,7 @@
         </label>
         </div>
       </section>
-      <div class="stage-card-footer"><button type="button" class="next-button">Continuar <span>→</span></button></div>
+      <div class="stage-card-footer data-footer"><button type="button" class="next-button" data-next-step="2">Continuar <span>→</span></button></div>
       <section class="card generation-section">
         <div class="stage-card-header"><h1>Generación de contrato</h1><p>Selecciona o sube la plantilla para generar el borrador</p></div>
         <div class="stage-card-body"><h2 class="form-group-title">Plantilla del contrato</h2>
@@ -86,6 +86,7 @@
         <button type="submit" class="primary-action">GENERAR BORRADOR DE CONTRATO <span>→</span></button>
         </div>
       </section>
+      {% if estado_generado %}<div class="stage-card-footer generation-footer"><button type="button" class="next-button" data-next-step="3">Continuar al envío <span>→</span></button></div>{% endif %}
     </form>
       </div>
     </section>
@@ -198,7 +199,16 @@
       </ol>
     </section>
   </div>
+  <style>
+    body{margin:0}
+    .workflow-shell[data-active-step="1"] .generation-section,.workflow-shell[data-active-step="1"] .generation-footer,.workflow-shell[data-active-step="1"] .review-panel,.workflow-shell[data-active-step="1"] .signature-stage{display:none}
+    .workflow-shell[data-active-step="2"] .paste-data,.workflow-shell[data-active-step="2"] .data-section,.workflow-shell[data-active-step="2"] .data-footer{display:none}
+    .workflow-shell[data-active-step="2"] .stage-intake .stage-layout{grid-template-columns:1fr}.workflow-shell[data-active-step="2"] .stage-intake .stage-card{grid-column:1}
+    .workflow-shell[data-active-step="2"] .signature-stage{display:none}
+    .workflow-shell[data-active-step="3"] .stage-intake,.workflow-shell[data-active-step="3"] .review-panel{display:none}
+  </style>
   <script src="/assets/js/app.js"></script>
+  <script>document.getElementById('paste-data-form')?.addEventListener('submit',()=>{try{sessionStorage.setItem('contratos-workflow-step','1')}catch(error){}});</script>
 </body>
 
 </html>
