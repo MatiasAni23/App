@@ -1,156 +1,204 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Generación de borradores de contrato</title>
-    <link rel="stylesheet" href="/assets/css/styles.css">
-  </head>
-  <body>
-    <main class="container">
-      <h1>Generación de borradores de contrato</h1>
-      {% if mensaje and not mostrar_modal_exito %}<div class="notice success">✓ {{ mensaje }}</div>{% endif %}{% if error %}<div class="notice error">{{ error }}</div>{% endif %}{% if registro_id %}<div class="notice info">Datos cargados desde Google Sheets.</div>{% endif %}
-      <details class="paste-data">
-        <summary>Pegar datos desde Excel (opcional)</summary>
-        <form action="/datos/pegar" method="post">
-          <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
-          <p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p>
-          <label>Datos copiados<textarea name="datos_pegados" rows="9" placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente">
-            </textarea>
-          </label>
-          <button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button>
-        </form>
-      </details>
-      <form id="generate-contract-form" action="/contrato/generar" method="post" enctype="multipart/form-data">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generación de borradores de contrato</title>
+  <link rel="stylesheet" href="/assets/css/styles.css">
+</head>
+
+<body>
+  <header class="workflow-header">
+    <nav class="stepper" aria-label="Progreso del contrato">
+      <div class="step {% if estado_generado %}complete{% else %}active{% endif %}"><span class="step-marker">{% if estado_generado %}✓{% else %}1{% endif %}</span><span>Ingreso de datos</span></div>
+      <span class="step-line"></span>
+      <div class="step {% if enviado %}complete{% elif estado_generado %}active{% endif %}"><span class="step-marker">{% if enviado %}✓{% else %}2{% endif %}</span><span>Generar contrato</span></div>
+      <span class="step-line"></span>
+      <div class="step {% if enviado %}active{% endif %}"><span class="step-marker">3</span><span>Enviar a firma</span></div>
+    </nav>
+  </header>
+  <main class="container workflow-shell">
+    <h1>Generación de borradores de contrato</h1>
+    {% if mensaje and not mostrar_modal_exito %}<div class="notice success">✓ {{ mensaje }}</div>{% endif %}{% if error
+    %}<div class="notice error">{{ error }}</div>{% endif %}{% if registro_id %}<div class="notice info">Datos cargados
+      desde Google Sheets.</div>{% endif %}
+    <section class="workflow-stage stage-intake">
+      <div class="stage-layout">
+    <aside class="paste-data side-panel">
+      <h2>PEGAR DATOS</h2>
+      <form action="/datos/pegar" method="post">
         <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
-        <details {% if not registro_id %}open{% endif %}>
-          <summary>¿Quieres verificar los datos?</summary>
-          <p class="hint">Puedes revisar o corregir la información antes de crear el borrador.</p>
-          <div class="grid">
-            <label>Nombres *<input name="nombres" required value="{{ datos.nombres }}">
-            </label>
-            <label>Apellidos *<input name="apellidos" required value="{{ datos.apellidos }}">
-            </label>
-            <label>DNI / Documento *<input name="dni" required value="{{ datos.dni }}">
-            </label>
-            <label>Celular<input name="celular" value="{{ datos.celular }}">
-            </label>
-            <label>Email *<input name="email" type="email" required value="{{ datos.email }}">
-            </label>
-            <label>Ciudad<input name="ciudad" value="{{ datos.ciudad }}">
-            </label>
-            <label>País<input name="pais" value="{{ datos.pais }}">
-            </label>
-            <label>Monto<input name="monto" value="{{ datos.monto }}">
-            </label>
-            <label>Banco *<input name="banco" required value="{{ datos.banco }}">
-            </label>
-            <label>Productos<input name="productos" value="{{ datos.productos }}">
-            </label>
-          </div>
-          <label>Fecha *<input name="fecha" type="date" required value="{{ fecha.isoformat() }}">
-          </label>
-        </details>
-        <section class="card">
-          <h2>Plantilla del contrato</h2>
-          <label>Plantilla guardada<select name="plantilla_guardada">
-              <option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option value="{{ plantilla }}">{{ plantilla }}</option>{% endfor %}</select>
-          </label>
-          <label>Subir plantilla personalizada<input name="plantilla_personalizada" type="file" accept=".docx">
-          </label>
-          <p class="hint">La plantilla subida tiene prioridad sobre la plantilla guardada.</p>
-          <button type="submit">GENERAR BORRADOR DE CONTRATO</button>
-        </section>
+        <p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p>
+        <label>Datos copiados<textarea name="datos_pegados" rows="9"
+            placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente">
+            </textarea>
+        </label>
+        <button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button>
       </form>
-      {% if drive_url %}<section class="card review-panel">
-          <div class="review-heading">
-            <div class="review-icon">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 18.5h10.5a3.5 3.5 0 0 0 .4-7A5.8 5.8 0 0 0 7 9.3 4.6 4.6 0 0 0 7 18.5Z">
+      <p class="panel-help">Los datos reconocidos se cargarán en el formulario para que puedas revisarlos.</p>
+    </aside>
+    <form id="generate-contract-form" class="stage-card" action="/contrato/generar" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
+      <section class="data-section">
+        <div class="stage-card-header"><h1>Datos a ingresar</h1><p>Completa o corrige la información del colaborador</p></div>
+        <div class="stage-card-body"><h2 class="form-group-title">Datos personales</h2>
+        <summary>¿Quieres verificar los datos?</summary>
+        <p class="hint">Puedes revisar o corregir la información antes de crear el borrador.</p>
+        <div class="grid">
+          <label>Nombres *<input name="nombres" required value="{{ datos.nombres }}">
+          </label>
+          <label>Apellidos *<input name="apellidos" required value="{{ datos.apellidos }}">
+          </label>
+          <label>DNI / Documento *<input name="dni" required value="{{ datos.dni }}">
+          </label>
+          <label>Celular<input name="celular" value="{{ datos.celular }}">
+          </label>
+          <label>Email *<input name="email" type="email" required value="{{ datos.email }}">
+          </label>
+          <label>Ciudad<input name="ciudad" value="{{ datos.ciudad }}">
+          </label>
+          <label>País<input name="pais" value="{{ datos.pais }}">
+          </label>
+          <label>Monto<input name="monto" value="{{ datos.monto }}">
+          </label>
+          <label>Banco *<input name="banco" required value="{{ datos.banco }}">
+          </label>
+          <label>Productos<input name="productos" value="{{ datos.productos }}">
+          </label>
+        </div>
+        <label>Fecha *<input name="fecha" type="date" required value="{{ fecha.isoformat() }}">
+        </label>
+        </div>
+      </section>
+      <div class="stage-card-footer"><button type="button" class="next-button">Continuar <span>→</span></button></div>
+      <section class="card generation-section">
+        <div class="stage-card-header"><h1>Generación de contrato</h1><p>Selecciona o sube la plantilla para generar el borrador</p></div>
+        <div class="stage-card-body"><h2 class="form-group-title">Plantilla del contrato</h2>
+        <label>Plantilla guardada<select name="plantilla_guardada">
+            <option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option
+              value="{{ plantilla }}">{{ plantilla }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Subir plantilla personalizada<input name="plantilla_personalizada" type="file" accept=".docx">
+        </label>
+        <p class="hint">La plantilla subida tiene prioridad sobre la plantilla guardada.</p>
+        <button type="submit" class="primary-action">GENERAR BORRADOR DE CONTRATO <span>→</span></button>
+        </div>
+      </section>
+    </form>
+      </div>
+    </section>
+    {% if drive_url %}<section class="card review-panel workflow-stage">
+      <div class="review-heading">
+        <div class="review-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 18.5h10.5a3.5 3.5 0 0 0 .4-7A5.8 5.8 0 0 0 7 9.3 4.6 4.6 0 0 0 7 18.5Z">
+            </path>
+            <path d="M12 10v8">
+            </path>
+            <path d="m9.5 12.5 2.5-2.5 2.5 2.5">
+            </path>
+          </svg>
+        </div>
+        <div>
+          <h2>Contrato listo para revisión</h2>
+          <p>
+            <span>✓</span>El contrato fue guardado como documento editable en Google Drive.
+          </p>
+        </div>
+      </div>
+      <p class="choice-intro">
+        <span>ⓘ</span>Edita el contrato en <strong>Google Drive</strong>, descarga el PDF y vuelve a este formulario
+        para continuar.
+      </p>
+      <div class="edit-options">
+        <section class="edit-choice">
+          <div class="choice-title">
+            <span class="choice-number">1</span>
+            <h3>Editar en Google Drive</h3>
+          </div>
+          <div class="choice-content">
+            <div class="document-illustration-shell">
+              <svg class="document-illustration" viewBox="0 0 150 175" aria-hidden="true">
+                <path d="M24 8h66l35 35v113a10 10 0 0 1-10 10H24a10 10 0 0 1-10-10V18A10 10 0 0 1 24 8Z" fill="#fff"
+                  stroke="#cbd5e1" stroke-width="3">
                 </path>
-                <path d="M12 10v8">
+                <path d="M90 8v35h35" fill="#eef4fb" stroke="#cbd5e1" stroke-width="3">
                 </path>
-                <path d="m9.5 12.5 2.5-2.5 2.5 2.5">
+                <path d="M35 69h60M35 86h48M35 103h57M35 120h42" stroke="#78a6d9" stroke-width="6"
+                  stroke-linecap="round">
                 </path>
               </svg>
             </div>
-            <div>
-              <h2>Contrato listo para revisión</h2>
-              <p>
-                <span>✓</span>El contrato fue guardado como documento editable en Google Drive.</p>
-            </div>
-            </div><p class="choice-intro">
-              <span>ⓘ</span>Edita el contrato en <strong>Google Drive</strong>, descarga el PDF y vuelve a este formulario para continuar.</p><div class="edit-options">
-            <section class="edit-choice">
-              <div class="choice-title">
-                <span class="choice-number">1</span>
-                <h3>Editar en Google Drive</h3>
-              </div>
-              <div class="choice-content">
-                <div class="document-illustration-shell">
-                  <svg class="document-illustration" viewBox="0 0 150 175" aria-hidden="true">
-                    <path d="M24 8h66l35 35v113a10 10 0 0 1-10 10H24a10 10 0 0 1-10-10V18A10 10 0 0 1 24 8Z" fill="#fff" stroke="#cbd5e1" stroke-width="3">
-                    </path>
-                    <path d="M90 8v35h35" fill="#eef4fb" stroke="#cbd5e1" stroke-width="3">
-                    </path>
-                    <path d="M35 69h60M35 86h48M35 103h57M35 120h42" stroke="#78a6d9" stroke-width="6" stroke-linecap="round">
-                    </path>
-                  </svg>
-                </div>
-                <p>Realiza los cambios directamente en <strong>Google Drive</strong>. Luego descarga el documento como PDF y vuelve a este formulario para subirlo y enviarlo a firma.</p>
-              </div>
-              <a class="drive-button choice-action" href="{{ drive_url }}" target="_blank" rel="noopener">IR A GOOGLE DRIVE ↗</a>
-              <div class="choice-note">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="9">
-                  </circle>
-                  <path d="M12 10v6m0-9h.01">
-                  </path>
-                </svg>
-                <span>Después de editar, descarga el PDF y vuelve a este formulario para continuar.</span>
-              </div>
-            </section></div></section>{% endif %}
-      {% if estado_generado or enviado %}<section class="card">
-          <h2>Documento final para firma</h2>{% if enviado %}<p class="hint">El documento fue enviado correctamente a firma.</p>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data">
-              <input type="hidden" name="registro_id" value="{{ registro_id }}">
-              <p>
-                <strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}</p>
-              <p>
-                <strong>Correo:</strong> {{ datos.email }}</p>
-              <label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required>
-              </label>
-              <p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p>
-              <button type="submit">APROBAR Y ENVIAR A FIRMA</button>
-            </form>{% endif %}</section>{% endif %}
-    </main>{% if mostrar_modal_exito %}<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-exito-titulo">
-        <section class="modal">
-          <div class="modal-icon" aria-hidden="true">✓</div>
-          <h2 id="modal-exito-titulo">{{ titulo_modal_exito }}</h2>
-          <p>{{ mensaje }}</p>
-          <button type="button" onclick="this.closest('.modal-backdrop').remove()">CONTINUAR</button>
+            <p>Realiza los cambios directamente en <strong>Google Drive</strong>. Luego descarga el documento como PDF y
+              vuelve a este formulario para subirlo y enviarlo a firma.</p>
+          </div>
+          <a class="drive-button choice-action" href="{{ drive_url }}" target="_blank" rel="noopener">IR A GOOGLE DRIVE
+            ↗</a>
+          <div class="choice-note">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9">
+              </circle>
+              <path d="M12 10v6m0-9h.01">
+              </path>
+            </svg>
+            <span>Después de editar, descarga el PDF y vuelve a este formulario para continuar.</span>
+          </div>
         </section>
-      </div>{% endif %}<div id="loading-modal" class="modal-backdrop loading-modal" role="status" aria-live="polite" hidden>
-      <section class="modal">
-        <div class="loading-heading">
-          <div class="loading-spinner" aria-hidden="true">
-          </div>
-          <div>
-            <h2>Estamos creando tu borrador</h2>
-            <p>Esto puede tardar unos segundos.</p>
-          </div>
+      </div>
+    </section>{% endif %}
+    {% if estado_generado or enviado %}<section class="card workflow-stage signature-stage">
+      <h2>Documento final para firma</h2>{% if enviado %}<p class="hint">El documento fue enviado correctamente a firma.
+      </p>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="registro_id" value="{{ registro_id }}">
+        <p>
+          <strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}
+        </p>
+        <p>
+          <strong>Correo:</strong> {{ datos.email }}
+        </p>
+        <label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required>
+        </label>
+        <p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p>
+        <button type="submit">APROBAR Y ENVIAR A FIRMA</button>
+      </form>{% endif %}
+    </section>{% endif %}
+  </main>{% if mostrar_modal_exito %}<div class="modal-backdrop" role="dialog" aria-modal="true"
+    aria-labelledby="modal-exito-titulo">
+    <section class="modal">
+      <div class="modal-icon" aria-hidden="true">✓</div>
+      <h2 id="modal-exito-titulo">{{ titulo_modal_exito }}</h2>
+      <p>{{ mensaje }}</p>
+      <button type="button" onclick="this.closest('.modal-backdrop').remove()">CONTINUAR</button>
+    </section>
+  </div>{% endif %}<div id="loading-modal" class="modal-backdrop loading-modal" role="status" aria-live="polite" hidden>
+    <section class="modal">
+      <div class="loading-heading">
+        <div class="loading-spinner" aria-hidden="true">
         </div>
-        <ol class="loading-steps">
-          <li class="loading-step">
-            <span class="emoji">🔎</span> Revisando los datos del contrato</li>
-          <li class="loading-step">
-            <span class="emoji">📄</span> Preparando el documento</li>
-          <li class="loading-step">
-            <span class="emoji">✍️</span> Agregando los datos a la plantilla</li>
-          <li class="loading-step">
-            <span class="emoji">☁️</span> Guardando el borrador</li>
-        </ol>
-      </section>
-    </div>
-    <script src="/assets/js/app.js"></script>
-  </body>
+        <div>
+          <h2>Estamos creando tu borrador</h2>
+          <p>Esto puede tardar unos segundos.</p>
+        </div>
+      </div>
+      <ol class="loading-steps">
+        <li class="loading-step">
+          <span class="emoji">🔎</span> Revisando los datos del contrato
+        </li>
+        <li class="loading-step">
+          <span class="emoji">📄</span> Preparando el documento
+        </li>
+        <li class="loading-step">
+          <span class="emoji">✍️</span> Agregando los datos a la plantilla
+        </li>
+        <li class="loading-step">
+          <span class="emoji">☁️</span> Guardando el borrador
+        </li>
+      </ol>
+    </section>
+  </div>
+  <script src="/assets/js/app.js"></script>
+</body>
+
 </html>
