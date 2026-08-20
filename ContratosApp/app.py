@@ -1,4 +1,4 @@
-"""Aplicación FastAPI para generación de borradores y envío a firma."""
+﻿"""Aplicación FastAPI para generación de borradores y envío a firma."""
 
 from datetime import date, datetime
 import json
