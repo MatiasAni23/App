@@ -79,8 +79,8 @@
               <p>
                 <span>✓</span>El contrato fue guardado como documento editable en Google Drive.</p>
             </div>
-          </div>{% if editor_configurado %}<p class="choice-intro">
-              <span>ⓘ</span>Elige <strong>una</strong> de las siguientes opciones para <strong>realizar cambios</strong> en el contrato:</p>{% endif %}<div class="edit-options">
+            </div><p class="choice-intro">
+              <span>ⓘ</span>Edita el contrato en <strong>Google Drive</strong>, descarga el PDF y vuelve a este formulario para continuar.</p><div class="edit-options">
             <section class="edit-choice">
               <div class="choice-title">
                 <span class="choice-number">1</span>
@@ -109,36 +109,7 @@
                 </svg>
                 <span>Después de editar, descarga el PDF y vuelve a este formulario para continuar.</span>
               </div>
-            </section>{% if editor_configurado %}<section class="edit-choice">
-                <div class="choice-title">
-                  <span class="choice-number">2</span>
-                  <h3>Editar en el editor de documento</h3>
-                </div>
-                <div class="choice-content">
-                  <svg class="document-illustration" viewBox="0 0 150 175" aria-hidden="true">
-                    <path d="M24 8h66l35 35v113a10 10 0 0 1-10 10H24a10 10 0 0 1-10-10V18A10 10 0 0 1 24 8Z" fill="#fff" stroke="#cbd5e1" stroke-width="3">
-                    </path>
-                    <path d="M90 8v35h35" fill="#eef4fb" stroke="#cbd5e1" stroke-width="3">
-                    </path>
-                    <path d="M35 69h60M35 86h48M35 103h57M35 120h42" stroke="#78a6d9" stroke-width="6" stroke-linecap="round">
-                    </path>
-                    <rect x="78" y="112" width="52" height="52" rx="4" fill="#fff" stroke="#4d8bd1" stroke-width="3" stroke-dasharray="5 4">
-                    </rect>
-                    <text x="104" y="151" text-anchor="middle" font-size="42" font-family="Arial" fill="#163150">A</text>
-                  </svg>
-                  <p>Edita el contrato en nuestro editor integrado. Guarda los cambios y presiona <strong>Volver al formulario</strong>. El PDF se descargará automáticamente para que puedas enviarlo a firma.</p>
-                </div>
-                <a class="drive-button secondary choice-action" href="/contrato/editor/{{ registro_id }}">ABRIR EDITOR DE DOCUMENTO ✎</a>
-                <div class="choice-note">
-                  <svg viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9">
-                    </circle>
-                    <path d="M12 10v6m0-9h.01">
-                    </path>
-                  </svg>
-                  <span>Al guardar, el PDF se descargará automáticamente. Luego podrás subirlo para la firma.</span>
-                </div>
-              </section>{% endif %}</div>{% if not editor_configurado %}<p class="hint">Editor de documentos no configurado. Puedes continuar editando desde Google Drive.</p>{% endif %}</section>{% endif %}
+            </section></div></section>{% endif %}
       {% if estado_generado or enviado %}<section class="card">
           <h2>Documento final para firma</h2>{% if enviado %}<p class="hint">El documento fue enviado correctamente a firma.</p>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data">
               <input type="hidden" name="registro_id" value="{{ registro_id }}">
