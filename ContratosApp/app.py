@@ -31,11 +31,11 @@ from security import (SESSION_COOKIE_NAME, crear_cookie_sesion, registro_desde_c
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DIRECTORIO_PLANTILLAS = BASE_DIR / "plantillas"
+APP_DIR = BASE_DIR / "ContratosApp" if (BASE_DIR / "ContratosApp").is_dir() else BASE_DIR
+DIRECTORIO_PLANTILLAS = APP_DIR / "plantillas"
 app = FastAPI(title="Generación de borradores de contrato")
-app.mount("/assets", StaticFiles(directory=BASE_DIR / "assets"), name="assets")
-app.mount("/public", StaticFiles(directory=BASE_DIR / "public"), name="public")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+app.mount("/assets", StaticFiles(directory=APP_DIR / "assets"), name="assets")
+templates = Jinja2Templates(directory=APP_DIR / "templates")
 LOGGER = logging.getLogger(__name__)
 UNAUTHORIZED_HTML = """<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Acceso no autorizado</title></head><body><h1>Acceso no autorizado</h1><p>Este sistema debe abrirse desde el formulario de gestión de contratos.</p></body></html>"""
 
