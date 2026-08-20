@@ -21,8 +21,7 @@
   <main class="container workflow-shell">
     <h1>Generación de borradores de contrato</h1>
     {% if mensaje and not mostrar_modal_exito %}<div class="notice success">✓ {{ mensaje }}</div>{% endif %}{% if error
-    %}<div class="notice error">{{ error }}</div>{% endif %}{% if registro_id %}<div class="notice info">Datos cargados
-      desde Google Sheets.</div>{% endif %}
+    %}<div class="notice error">{{ error }}</div>{% endif %}
     <section class="workflow-stage stage-intake">
       <div class="stage-layout">
     <aside class="paste-data side-panel">
@@ -37,6 +36,18 @@
         <button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button>
       </form>
       <p class="panel-help">Los datos reconocidos se cargarán en el formulario para que puedas revisarlos.</p>
+      <section class="identity-summary" aria-label="Identificación del colaborador">
+        <h2>Identificación</h2>
+        <div class="identity-avatar">{{ (datos.nombres[:1] ~ datos.apellidos[:1])|upper }}</div>
+        <h3>{{ datos.nombres }} {{ datos.apellidos }}</h3>
+        <code>{{ datos.dni or 'Sin DNI' }}</code>
+        <dl>
+          <div><dt>Email</dt><dd>{{ datos.email or 'Sin correo' }}</dd></div>
+          <div><dt>Celular</dt><dd>{{ datos.celular or 'Sin celular' }}</dd></div>
+          <div><dt>País</dt><dd>{{ datos.pais or 'Sin país' }}</dd></div>
+          <div><dt>Ciudad</dt><dd>{{ datos.ciudad or 'Sin ciudad' }}</dd></div>
+        </dl>
+      </section>
     </aside>
     <form id="generate-contract-form" class="stage-card" action="/contrato/generar" method="post" enctype="multipart/form-data">
       <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
@@ -72,6 +83,7 @@
         </div>
       </section>
       <div class="stage-card-footer data-footer"><button type="button" class="next-button" data-next-step="2">Continuar <span>→</span></button></div>
+      <div class="step-toolbar"><button type="button" class="back-button" data-next-step="1">← Volver</button></div>
       <section class="card generation-section">
         <div class="stage-card-header"><h1>Generación de contrato</h1><p>Selecciona o sube la plantilla para generar el borrador</p></div>
         <div class="stage-card-body"><h2 class="form-group-title">Plantilla del contrato</h2>
@@ -149,6 +161,7 @@
         </section>
       </div>
     </section>{% endif %}
+    {% if estado_generado %}<div class="send-navigation workflow-stage"><button type="button" class="next-button" data-next-step="3">Continuar al envío <span>→</span></button></div>{% endif %}
     {% if estado_generado or enviado %}<section class="card workflow-stage signature-stage">
       <h2>Documento final para firma</h2>{% if enviado %}<p class="hint">El documento fue enviado correctamente a firma.
       </p>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data">
@@ -200,12 +213,41 @@
     </section>
   </div>
   <style>
-    body{margin:0}
-    .workflow-shell[data-active-step="1"] .generation-section,.workflow-shell[data-active-step="1"] .generation-footer,.workflow-shell[data-active-step="1"] .review-panel,.workflow-shell[data-active-step="1"] .signature-stage{display:none}
-    .workflow-shell[data-active-step="2"] .paste-data,.workflow-shell[data-active-step="2"] .data-section,.workflow-shell[data-active-step="2"] .data-footer{display:none}
-    .workflow-shell[data-active-step="2"] .stage-intake .stage-layout{grid-template-columns:1fr}.workflow-shell[data-active-step="2"] .stage-intake .stage-card{grid-column:1}
-    .workflow-shell[data-active-step="2"] .signature-stage{display:none}
-    .workflow-shell[data-active-step="3"] .stage-intake,.workflow-shell[data-active-step="3"] .review-panel{display:none}
+    body { margin: 0; }
+    .identity-summary { display: none; }
+    .workflow-shell[data-active-step="1"] .generation-section,
+    .workflow-shell[data-active-step="1"] .generation-footer,
+    .workflow-shell[data-active-step="1"] .step-toolbar,
+    .workflow-shell[data-active-step="1"] .review-panel,
+    .workflow-shell[data-active-step="1"] .send-navigation,
+    .workflow-shell[data-active-step="1"] .signature-stage { display: none; }
+    .workflow-shell[data-active-step="2"] .paste-data > h2,
+    .workflow-shell[data-active-step="2"] .paste-data > form,
+    .workflow-shell[data-active-step="2"] .paste-data > .panel-help,
+    .workflow-shell[data-active-step="2"] .data-section,
+    .workflow-shell[data-active-step="2"] .data-footer,
+    .workflow-shell[data-active-step="2"] .generation-footer { display: none; }
+    .workflow-shell[data-active-step="2"] .identity-summary { display: block; }
+    .workflow-shell[data-active-step="2"] .signature-stage { display: none; }
+    .workflow-shell[data-active-step="3"] .stage-intake,
+    .workflow-shell[data-active-step="3"] .review-panel,
+    .workflow-shell[data-active-step="3"] .send-navigation { display: none; }
+
+    .step-toolbar { padding: 16px 26px 0; background: #fff; }
+    .back-button { appearance: none; border: 0; background: transparent; color: #52709a; cursor: pointer; font: inherit; font-weight: 700; padding: 8px 0; }
+    .back-button:hover { color: #003f82; }
+    .identity-summary { color: #0c2444; }
+    .identity-summary h2 { color: #58749c; font-size: .78rem; font-weight: 600; letter-spacing: .08em; margin: 0 0 16px; text-transform: uppercase; }
+    .identity-avatar { align-items: center; background: #17457f; border-radius: 50%; color: #fff; display: flex; font-size: 1.1rem; font-weight: 700; height: 50px; justify-content: center; margin-bottom: 12px; width: 50px; }
+    .identity-summary h3 { font-size: 1rem; line-height: 1.35; margin: 0 0 3px; }
+    .identity-summary code { color: #58749c; font-family: inherit; font-size: .8rem; }
+    .identity-summary dl { border-top: 1px solid #dce6f2; display: grid; gap: 13px; margin: 20px 0 0; padding-top: 16px; }
+    .identity-summary dl div { display: grid; gap: 3px; }
+    .identity-summary dt { color: #58749c; font-size: .72rem; font-weight: 600; text-transform: uppercase; }
+    .identity-summary dd { font-size: .9rem; margin: 0; overflow-wrap: anywhere; }
+    .send-navigation { display: flex; justify-content: flex-end; margin: 0 auto 30px; max-width: 1116px; }
+    .send-navigation .next-button { min-width: 220px; }
+    @media (max-width: 800px) { .send-navigation { margin: 0 18px 24px; } }
   </style>
   <script src="/assets/js/app.js"></script>
   <script>document.getElementById('paste-data-form')?.addEventListener('submit',()=>{try{sessionStorage.setItem('contratos-workflow-step','1')}catch(error){}});</script>
