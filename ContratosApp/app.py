@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from config import (APP_BASE_URL, DRIVE_REVIEW_FOLDER_ID, MAX_DOCX_SIZE_BYTES, MAX_PDF_SIZE_BYTES,
                     N8N_WEBHOOK_SECRET, N8N_ZAPSIGN_WEBHOOK_URL, ONLYOFFICE_DOCUMENT_SERVER_URL,
                     ONLYOFFICE_JWT_HEADER, ONLYOFFICE_JWT_SECRET, ONLYOFFICE_URL_SIGNING_SECRET,
-                    APP_ACCESS_SECRET)
+                    APP_ACCESS_SECRET, LOCAL_DEV_BYPASS_AUTH, LOCAL_DEV_INSECURE_COOKIES)
 from drive_service import (ErrorDrive, crear_servicio_drive, descargar_google_doc_como_docx,
                            obtener_credenciales, obtener_documento_por_registro, obtener_url_documento,
                            reemplazar_google_doc_desde_docx, subir_docx_como_google_docs)
@@ -77,7 +77,18 @@ def _registro_autorizado(request: Request, registro_id: str | None) -> str:
     return registro_sesion
 
 
+def _vista_previa_local(request: Request, registro_id: str | None) -> bool:
+    """Habilita una vista local explícita, sin exponer ese bypass en producción."""
+    return bool(
+        LOCAL_DEV_BYPASS_AUTH
+        and request.url.hostname in {"localhost", "127.0.0.1", "::1"}
+        and registro_valido(registro_id)
+    )
+
+
 def _registro_sesion_o_403(request: Request, registro_id: str | None) -> str:
+    if _vista_previa_local(request, registro_id):
+        return registro_id
     if not APP_ACCESS_SECRET:
         raise HTTPException(403, "Acceso no autorizado.")
     return _registro_autorizado(request, registro_id)
@@ -85,7 +96,7 @@ def _registro_sesion_o_403(request: Request, registro_id: str | None) -> str:
 
 def _render(request: Request, *, registro_id: str | None = None, datos: dict[str, str] | None = None,
             error: str | None = None, mensaje: str | None = None, drive_url: str | None = None,
-            enviado: bool = False, status_code: int = 200):
+            enviado: bool = False, datos_pegados: str = "", status_code: int = 200):
     registro, error_registro = _obtener_registro(registro_id) if datos is None else (None, None)
     datos_finales = datos or registro or _datos_vacios()
     documento_drive = None
@@ -105,6 +116,7 @@ def _render(request: Request, *, registro_id: str | None = None, datos: dict[str
         "estado_generado": datos_finales.get("estado") == "Generado",
         "error": error or error_registro,
         "mensaje": mensaje,
+        "datos_pegados": datos_pegados,
         "drive_url": drive_url,
         "editor_configurado": editor_configurado(ONLYOFFICE_DOCUMENT_SERVER_URL, ONLYOFFICE_URL_SIGNING_SECRET, APP_BASE_URL),
         "enviado": enviado,
@@ -145,7 +157,7 @@ async def acceso_temporal(registro: str = "", exp: str = "", token: str = ""):
         SESSION_COOKIE_NAME,
         crear_cookie_sesion(registro, expiracion, APP_ACCESS_SECRET),
         max_age=max(1, expiracion - int(datetime.now().timestamp())),
-        httponly=True, secure=True, samesite="lax", path="/",
+        httponly=True, secure=not LOCAL_DEV_INSECURE_COOKIES, samesite="lax", path="/",
     )
     return respuesta
 
@@ -161,6 +173,7 @@ async def cargar_datos_pegados(
         return _render(
             request, registro_id=registro_id or None,
             error="No se reconocieron datos. Usa líneas como: Nombres: María Ejemplo.",
+            datos_pegados=datos_pegados,
             status_code=422,
         )
     datos = _datos_vacios()
@@ -172,7 +185,7 @@ async def cargar_datos_pegados(
     mensaje = "Datos cargados en el formulario. Revísalos antes de generar el borrador."
     if no_reconocidas:
         mensaje += f" Se omitieron {len(no_reconocidas)} línea(s) sin etiqueta reconocida."
-    return _render(request, registro_id=registro_id or None, datos=datos, mensaje=mensaje)
+    return _render(request, registro_id=registro_id or None, datos=datos, mensaje=mensaje, datos_pegados=datos_pegados)
 
 
 @app.post("/contrato/generar")

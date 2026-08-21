@@ -25,6 +25,10 @@ ONLYOFFICE_JWT_HEADER = os.getenv("ONLYOFFICE_JWT_HEADER", "Authorization")
 ONLYOFFICE_URL_SIGNING_SECRET = os.getenv("ONLYOFFICE_URL_SIGNING_SECRET", "")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").rstrip("/")
 APP_ACCESS_SECRET = os.getenv("APP_ACCESS_SECRET", "")
+# Solo para la vista previa local por HTTP. En producción debe permanecer vacío.
+LOCAL_DEV_INSECURE_COOKIES = os.getenv("LOCAL_DEV_INSECURE_COOKIES", "").strip().lower() in {"1", "true", "yes"}
+# Omite la sesión firmada únicamente para una vista previa ligada a localhost.
+LOCAL_DEV_BYPASS_AUTH = os.getenv("LOCAL_DEV_BYPASS_AUTH", "").strip().lower() in {"1", "true", "yes"}
 MAX_DOCX_SIZE_BYTES = 5 * 1024 * 1024
 
 #ID CARPETA REAL: 1GLxHxL7XV5JpwPTiCguyFalac3CAQnug

@@ -95,6 +95,7 @@ class FastAPIAppTests(unittest.TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertIn('value="Ana"', respuesta.text)
         self.assertIn('value="Banco Prueba"', respuesta.text)
+        self.assertIn("Nombres: Ana", respuesta.text)
 
 
 if __name__ == "__main__":

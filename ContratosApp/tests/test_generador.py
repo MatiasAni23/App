@@ -63,6 +63,31 @@ class GeneradorTests(unittest.TestCase):
         self.assertEqual(campos["celular"], "34 664")
         self.assertEqual(no_reconocidas, [])
 
+    def test_clasifica_fila_de_excel_con_encabezados(self):
+        texto = "Nombres\tApellidos\tDNI\tEmail\tBanco\nAna\tDemo\t123\tana@ejemplo.test\tBanco Prueba"
+        campos, no_reconocidas = parsear_datos_pegados(texto)
+        self.assertEqual(no_reconocidas, [])
+        self.assertEqual(campos["nombres"], "Ana")
+        self.assertEqual(campos["apellidos"], "Demo")
+        self.assertEqual(campos["email"], "ana@ejemplo.test")
+
+    def test_limpia_texto_libre_sin_etiquetas(self):
+        texto = "ANA MARIA\nPEREZ SOTO\n12.345.678-9\n+56 9 1234 5678\nContacto <ANA@EJEMPLO.COM>\nSANTIAGO\nCHILE"
+        campos, no_reconocidas = parsear_datos_pegados(texto)
+        self.assertEqual(no_reconocidas, [])
+        self.assertEqual(campos["nombres"], "Ana Maria")
+        self.assertEqual(campos["dni"], "12.345.678-9")
+        self.assertEqual(campos["celular"], "+56912345678")
+        self.assertEqual(campos["email"], "ana@ejemplo.com")
+
+    def test_clasifica_json_de_contacto(self):
+        texto = '{"nombre_completo":"Ana Maria Perez Soto","rut":"12.345.678-9","telefono":"+56 9 1234 5678","correo":"ANA@EJEMPLO.COM","ciudad":"santiago","pais":"chile"}'
+        campos, no_reconocidas = parsear_datos_pegados(texto)
+        self.assertEqual(no_reconocidas, [])
+        self.assertEqual(campos["nombres"], "Ana Maria")
+        self.assertEqual(campos["apellidos"], "Perez Soto")
+        self.assertEqual(campos["email"], "ana@ejemplo.com")
+
 
 if __name__ == "__main__":
     unittest.main()

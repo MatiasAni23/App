@@ -28,14 +28,13 @@
       <h2>PEGAR DATOS</h2>
       <form id="paste-data-form" action="/datos/pegar" method="post">
         <input type="hidden" name="registro_id" value="{{ registro_id or '' }}">
-        <p class="hint">Pega las filas copiadas desde Excel. Identificamos automáticamente cada campo.</p>
-        <label>Datos copiados<textarea name="datos_pegados" rows="9"
-            placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;Monto: 350&#10;Banco: Banco Demo&#10;Productos: Cuenta corriente">
-            </textarea>
-        </label>
+        <p class="hint">Pega los datos del colaborador. Identificamos automáticamente cada campo.</p>
+        <div class="paste-field"><textarea name="datos_pegados" rows="9" aria-label="Datos copiados"
+            placeholder="Nombres: María Ejemplo&#10;Apellidos: Pérez Soto&#10;DNI: DOC-12345678&#10;Celular: +56 9 1111 2222&#10;Email personal: maria.ejemplo@correo.test&#10;Ciudad: Santiago&#10;País: Chile&#10;">
+{{- datos_pegados or '' -}}</textarea>
+        </div>
         <button type="submit" class="secondary">CARGAR DATOS EN EL FORMULARIO</button>
       </form>
-      <p class="panel-help">Los datos reconocidos se cargarán en el formulario para que puedas revisarlos.</p>
       <section class="identity-summary" aria-label="Identificación del colaborador">
         <h2>Identificación</h2>
         <div class="identity-avatar">{{ (datos.nombres[:1] ~ datos.apellidos[:1])|upper }}</div>
@@ -83,9 +82,8 @@
         </div>
       </section>
       <div class="stage-card-footer data-footer"><button type="button" class="next-button" data-next-step="2">Continuar <span>→</span></button></div>
-      <div class="step-toolbar"><button type="button" class="back-button" data-next-step="1">← Volver</button></div>
       <section class="card generation-section">
-        <div class="stage-card-header"><h1>Generación de contrato</h1><p>Selecciona o sube la plantilla para generar el borrador</p></div>
+        <div class="stage-card-header"><button type="button" class="back-button" data-next-step="1">← Volver</button><h1>Generación de contrato</h1><p>Selecciona o sube la plantilla para generar el borrador</p></div>
         <div class="stage-card-body"><h2 class="form-group-title">Plantilla del contrato</h2>
         <label>Plantilla guardada<select name="plantilla_guardada">
             <option value="">Seleccione una plantilla</option>{% for plantilla in plantillas %}<option
@@ -162,22 +160,33 @@
       </div>
     </section>{% endif %}
     {% if estado_generado %}<div class="send-navigation workflow-stage"><button type="button" class="next-button" data-next-step="3">Continuar al envío <span>→</span></button></div>{% endif %}
-    {% if estado_generado or enviado %}<section class="card workflow-stage signature-stage">
-      <h2>Documento final para firma</h2>{% if enviado %}<p class="hint">El documento fue enviado correctamente a firma.
-      </p>{% else %}<form action="/contrato/enviar" method="post" enctype="multipart/form-data">
+    {% if estado_generado or enviado %}<div class="signature-layout workflow-stage">
+      <aside class="signature-identity"><h2>Firmante</h2><div class="signature-avatar">{{ (datos.nombres[:1] ~ datos.apellidos[:1])|upper }}</div><h3>{{ datos.nombres }} {{ datos.apellidos }}</h3><dl><div><dt>Correo electrónico</dt><dd>{{ datos.email }}</dd></div><div><dt>Celular</dt><dd>{{ datos.celular or 'Sin celular registrado' }}</dd></div><div><dt>País</dt><dd>{{ datos.pais or 'Sin país registrado' }}</dd></div><div><dt>RUT / DNI</dt><dd>{{ datos.dni }}</dd></div></dl></aside>
+      <section class="card signature-stage">
+      <header class="signature-header"><h2>Enviar a firma</h2><p>Sube el PDF final y envíalo al firmante correspondiente.</p></header>
+      {% if enviado %}<div class="signature-success"><span>✓</span><div><strong>Documento enviado a firma</strong><p>{{ mensaje }}</p></div></div>{% else %}
+      <form class="signature-form" action="/contrato/enviar" method="post" enctype="multipart/form-data">
         <input type="hidden" name="registro_id" value="{{ registro_id }}">
-        <p>
-          <strong>Firmante:</strong> {{ datos.nombres }} {{ datos.apellidos }}
-        </p>
-        <p>
-          <strong>Correo:</strong> {{ datos.email }}
-        </p>
-        <label>Subir documento PDF final<input name="pdf_final" type="file" accept=".pdf" required>
-        </label>
-        <p class="hint">El PDF definitivo se envía sólo después de confirmar esta acción.</p>
-        <button type="submit">APROBAR Y ENVIAR A FIRMA</button>
+        <section class="signature-upload"><h3>Documento final para firma</h3>
+          <label class="file-dropzone" for="pdf-final">
+            <input id="pdf-final" name="pdf_final" type="file" accept=".pdf" required>
+            <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg></span>
+            <span class="upload-title">Subir documento PDF</span>
+            <span class="upload-help">Haz clic para seleccionar el PDF descargado de Google Drive.</span>
+          </label>
+        </section>
+        <section class="signer-details"><h3>Datos del firmante</h3>
+          <dl class="signer-grid">
+            <div><dt>Firmante</dt><dd>{{ datos.nombres }} {{ datos.apellidos }}</dd></div>
+            <div><dt>Correo electrónico</dt><dd>{{ datos.email }}</dd></div>
+          </dl>
+        </section>
+        <p class="signature-help">El PDF definitivo se envía sólo después de confirmar esta acción.</p>
+        <button class="signature-submit" type="submit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-8.5 18-2.8-7.7L2 10.5 21 3Z"/><path d="m9.7 13.3 4.5-4.5"/></svg> Aprobar y enviar a firma</button>
       </form>{% endif %}
-    </section>{% endif %}
+      <footer class="signature-footer"><button type="button" class="signature-back" data-next-step="2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 18-6-6 6-6"/><path d="M8 12h10"/></svg>Volver</button></footer>
+      </section>
+    </div>{% endif %}
   </main>{% if mostrar_modal_exito %}<div class="modal-backdrop" role="dialog" aria-modal="true"
     aria-labelledby="modal-exito-titulo">
     <section class="modal">
@@ -215,11 +224,12 @@
   <style>
     body { margin: 0; }
     .identity-summary { display: none; }
+    .paste-data textarea { box-sizing: border-box; font-size: .95rem; line-height: 1.45; max-width: 100%; }
     .workflow-shell[data-active-step="1"] .generation-section,
     .workflow-shell[data-active-step="1"] .generation-footer,
-    .workflow-shell[data-active-step="1"] .step-toolbar,
     .workflow-shell[data-active-step="1"] .review-panel,
     .workflow-shell[data-active-step="1"] .send-navigation,
+    .workflow-shell[data-active-step="1"] .signature-layout,
     .workflow-shell[data-active-step="1"] .signature-stage { display: none; }
     .workflow-shell[data-active-step="2"] .paste-data > h2,
     .workflow-shell[data-active-step="2"] .paste-data > form,
@@ -228,13 +238,15 @@
     .workflow-shell[data-active-step="2"] .data-footer,
     .workflow-shell[data-active-step="2"] .generation-footer { display: none; }
     .workflow-shell[data-active-step="2"] .identity-summary { display: block; }
+    .workflow-shell[data-active-step="2"] .signature-layout { display: none; }
     .workflow-shell[data-active-step="2"] .signature-stage { display: none; }
+    .workflow-shell[data-active-step="2"] .stage-intake { margin-bottom: 0; }
     .workflow-shell[data-active-step="3"] .stage-intake,
     .workflow-shell[data-active-step="3"] .review-panel,
     .workflow-shell[data-active-step="3"] .send-navigation { display: none; }
 
-    .step-toolbar { padding: 16px 26px 0; background: #fff; }
-    .back-button { appearance: none; border: 0; background: transparent; color: #52709a; cursor: pointer; font: inherit; font-weight: 700; padding: 8px 0; }
+    .generation-section .stage-card-header { position: relative; }
+    .back-button { appearance: none; border: 0; background: transparent; color: #52709a; cursor: pointer; display: block; font: inherit; font-size: .9rem; font-weight: 700; margin: 0 0 14px; padding: 0; text-align: left; width: fit-content !important; }
     .back-button:hover { color: #003f82; }
     .identity-summary { color: #0c2444; }
     .identity-summary h2 { color: #58749c; font-size: .78rem; font-weight: 600; letter-spacing: .08em; margin: 0 0 16px; text-transform: uppercase; }
@@ -245,12 +257,72 @@
     .identity-summary dl div { display: grid; gap: 3px; }
     .identity-summary dt { color: #58749c; font-size: .72rem; font-weight: 600; text-transform: uppercase; }
     .identity-summary dd { font-size: .9rem; margin: 0; overflow-wrap: anywhere; }
-    .send-navigation { display: flex; justify-content: flex-end; margin: 0 auto 30px; max-width: 1116px; }
+    .review-panel { box-sizing: border-box; margin: 0 0 30px 364px; max-width: calc(100% - 364px); }
+    .workflow-shell[data-active-step="2"] .stage-card { border-bottom: 0; border-radius: 11px 11px 0 0; }
+    .workflow-shell[data-active-step="2"] .review-panel { border-top: 0; border-radius: 0 0 11px 11px; padding: 22px 26px !important; }
+    .workflow-shell[data-active-step="2"] .review-heading { gap: 12px; padding-bottom: 16px; }
+    .workflow-shell[data-active-step="2"] .review-icon { height: 46px; width: 46px; }
+    .workflow-shell[data-active-step="2"] .review-icon svg { height: 25px; width: 25px; }
+    .workflow-shell[data-active-step="2"] .review-heading h2 { font-size: 1.3rem; margin-bottom: 4px; }
+    .workflow-shell[data-active-step="2"] .review-heading p { font-size: .94rem; }
+    .workflow-shell[data-active-step="2"] .choice-intro,
+    .workflow-shell[data-active-step="2"] .choice-note { display: none; }
+    .workflow-shell[data-active-step="2"] .edit-choice { border-radius: 12px; grid-template-rows: auto auto auto auto; padding: 18px; }
+    .workflow-shell[data-active-step="2"] .choice-number { font-size: 1rem; height: 36px; width: 36px; }
+    .workflow-shell[data-active-step="2"] .choice-title { gap: 10px; }
+    .workflow-shell[data-active-step="2"] .choice-title h3 { font-size: 1.05rem; }
+    .workflow-shell[data-active-step="2"] .choice-content { gap: 14px; grid-template-columns: 72px minmax(0, 1fr); margin-top: 12px; min-height: 0; padding-block-end: 18px; }
+    .workflow-shell[data-active-step="2"] .document-illustration-shell { max-width: 72px; }
+    .workflow-shell[data-active-step="2"] .document-illustration-shell::after { background-size: 20px; border-width: 2px; bottom: -3px; height: 28px; right: -2px; width: 28px; }
+    .workflow-shell[data-active-step="2"] .choice-content p { font-size: .93rem; line-height: 1.45; }
+    .send-navigation { display: flex; justify-content: flex-end; margin: 0 0 30px 364px; max-width: calc(100% - 364px); }
     .send-navigation .next-button { min-width: 220px; }
-    @media (max-width: 800px) { .send-navigation { margin: 0 18px 24px; } }
+    @media (max-width: 900px) { .review-panel, .send-navigation { margin-left: 0; max-width: none; } }
+    @media (max-width: 800px) { .send-navigation { margin-bottom: 24px; } }
+
+    .signature-layout { align-items: start; display: grid; gap: 24px; grid-template-columns: 260px minmax(0, 1fr); }
+    .signature-identity { background: #fff; border: 1px solid #d5dfeb; border-radius: 11px; color: #0c2444; padding: 20px; }
+    .signature-identity h2 { color: #58749c; font-size: .78rem; font-weight: 600; letter-spacing: .08em; margin: 0 0 16px; text-transform: uppercase; }
+    .signature-avatar { align-items: center; background: #17457f; border-radius: 50%; color: #fff; display: flex; font-size: 1.1rem; font-weight: 700; height: 50px; justify-content: center; margin-bottom: 12px; width: 50px; }
+    .signature-identity h3 { font-size: 1rem; line-height: 1.35; margin: 0 0 16px; }
+    .signature-identity dl { border-top: 1px solid #dce6f2; display: grid; gap: 14px; margin: 0; padding-top: 15px; }
+    .signature-identity dt { color: #59749a; font-size: .72rem; font-weight: 600; text-transform: uppercase; }
+    .signature-identity dd { font-size: .88rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+    .signature-stage { margin: 0; max-width: none; overflow: hidden; padding: 0 !important; }
+    .signature-header { border-bottom: 1px solid #d5dfeb; padding: 20px 26px 18px; }
+    .signature-header h2 { color: #0c2444; font-size: 1.15rem; margin: 0 0 4px; }
+    .signature-header p { color: #59749a; margin: 0; }
+    .signature-form { margin: 0 !important; padding: 26px; }
+    .signature-form h3 { color: #355783; font-size: .9rem; font-weight: 650; letter-spacing: .06em; margin: 0 0 12px; text-transform: uppercase; }
+    .file-dropzone { align-items: center; border: 2px dashed #cbdaf0; border-radius: 10px; box-sizing: border-box; color: #0c2444; cursor: pointer; display: flex; flex-direction: column; justify-content: center; min-height: 190px; padding: 22px; text-align: center; }
+    .file-dropzone:hover { background: #f8fbff; border-color: #7197c6; }
+    .file-dropzone input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
+    .upload-icon { align-items: center; background: #e7eef8; border-radius: 50%; color: #52709a; display: flex; height: 50px; justify-content: center; margin-bottom: 12px; width: 50px; }
+    .upload-icon svg { fill: none; height: 24px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; width: 24px; }
+    .upload-title { font-size: 1.05rem; font-weight: 650; }
+    .upload-help { color: #59749a; font-size: .9rem; margin-top: 3px; }
+    .signer-details { margin-top: 26px; }
+    .signer-grid { background: #f4f7fb; border: 1px solid #d5dfeb; border-radius: 10px; display: grid; gap: 20px 34px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; padding: 20px; }
+    .signer-grid div { display: grid; gap: 4px; }
+    .signer-grid dt { color: #59749a; font-size: .73rem; font-weight: 600; text-transform: uppercase; }
+    .signer-grid dd { color: #0c2444; font-size: .96rem; margin: 0; overflow-wrap: anywhere; }
+    .signature-help { color: #59749a; font-size: .82rem; margin: 10px 0 18px; }
+    .signature-submit { background: var(--brand); border: 0; border-radius: 7px; color: #fff; font: inherit; font-weight: 700; margin: 0; padding: 14px 20px; width: 100%; }
+    .signature-submit svg { fill: none; height: 18px; margin-right: 9px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; vertical-align: -4px; width: 18px; }
+    .signature-submit:disabled { background: #e5ebf3; color: #97abc6; cursor: not-allowed; }
+    .signature-footer { border-top: 1px solid #d5dfeb; padding: 16px 26px; }
+    .signature-back { align-items: center; background: #edf4fc !important; border: 1px solid #bfd2e9 !important; border-radius: 7px; color: #17457f !important; cursor: pointer; display: inline-flex; font: inherit; font-size: .95rem; font-weight: 650; gap: 7px; padding: 9px 13px; text-align: left; width: auto !important; }
+    .signature-back:hover { background: #dfeefa !important; }
+    .signature-back svg { fill: none; height: 17px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; width: 17px; }
+    .signature-success { align-items: center; display: flex; gap: 14px; margin: 26px; padding: 18px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; color: #047857; }
+    .signature-success > span { align-items: center; background: #10a85b; border-radius: 50%; color: #fff; display: flex; font-weight: 800; height: 32px; justify-content: center; width: 32px; }
+    .signature-success p { margin: 3px 0 0; }
+    @media (max-width: 900px) { .signature-layout { grid-template-columns: 1fr; } .signature-identity { display: none; } }
+    @media (max-width: 620px) { .signature-header, .signature-form { padding-left: 18px; padding-right: 18px; } .signer-grid { grid-template-columns: 1fr; gap: 15px; } .file-dropzone { min-height: 155px; } }
   </style>
   <script src="/assets/js/app.js"></script>
   <script>document.getElementById('paste-data-form')?.addEventListener('submit',()=>{try{sessionStorage.setItem('contratos-workflow-step','1')}catch(error){}});</script>
+  <script>const pdfFinal=document.getElementById('pdf-final');pdfFinal?.addEventListener('change',()=>{const archivo=pdfFinal.files?.[0];const boton=document.querySelector('.signature-submit');if(!archivo||!boton)return;document.querySelector('.upload-title').textContent=archivo.name;document.querySelector('.upload-help').textContent='PDF listo para enviar a firma.';boton.disabled=false;});</script>
 </body>
 
 </html>
