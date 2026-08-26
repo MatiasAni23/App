@@ -97,6 +97,24 @@ class FastAPIAppTests(unittest.TestCase):
         self.assertIn('value="Banco Prueba"', respuesta.text)
         self.assertIn("Nombres: Ana", respuesta.text)
 
+    @patch("app.actualizar_estado_contrato")
+    @patch("app.enviar_pdf_a_firma", side_effect=app.ErrorN8N("No fue posible autenticar la integración de firma."))
+    @patch("app._obtener_registro", return_value=({**registro_prueba(), "estado": "Generado"}, None))
+    def test_error_de_n8n_no_avanza_el_estado(self, _obtener, _enviar, actualizar):
+        expiracion = int(time.time()) + 1800
+        with patch.object(app, "APP_ACCESS_SECRET", SECRETO):
+            self.client.get(
+                f"/access?registro={REGISTRO_A}&exp={expiracion}&token={firma_acceso(REGISTRO_A, expiracion, SECRETO)}",
+                follow_redirects=False,
+            )
+            respuesta = self.client.post(
+                "/contrato/enviar",
+                data={"registro_id": REGISTRO_A},
+                files={"pdf_final": ("final.pdf", b"%PDF-1.7\nprueba", "application/pdf")},
+            )
+        self.assertEqual(respuesta.status_code, 422)
+        actualizar.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

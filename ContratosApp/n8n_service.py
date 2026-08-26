@@ -57,6 +57,9 @@ def enviar_pdf_a_firma(
     if not email_valido(email):
         raise ErrorN8N("Ingresa un correo electrónico válido antes de enviar a firma.")
     validar_pdf(nombre_archivo, pdf_bytes, max_size_bytes)
+    if not webhook_secret or not webhook_secret.strip():
+        LOGGER.error("N8N_WEBHOOK_SECRET no está configurado")
+        raise ErrorN8N("No está configurada la autenticación con el servicio de firma.")
 
     payload = {
         "registro_id": registro_id,
@@ -65,11 +68,15 @@ def enviar_pdf_a_firma(
         "nombre_archivo": nombre_archivo,
         "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8"),
     }
-    headers = {"Content-Type": "application/json"}
-    if webhook_secret:
-        headers["X-Webhook-Secret"] = webhook_secret
+    headers = {
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": webhook_secret.strip(),
+    }
     try:
         respuesta = requests.post(webhook_url, json=payload, headers=headers, timeout=TIMEOUT_SEGUNDOS)
+        if respuesta.status_code in {401, 403}:
+            LOGGER.warning("n8n rechazó la autenticación del webhook: status=%s", respuesta.status_code)
+            raise ErrorN8N("No fue posible autenticar la integración de firma. Puedes volver a intentarlo.")
         respuesta.raise_for_status()
     except requests.Timeout as error:
         LOGGER.warning("Timeout al enviar contrato a n8n")
