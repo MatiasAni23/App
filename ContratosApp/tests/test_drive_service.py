@@ -1,17 +1,21 @@
 from io import BytesIO
 import json
 import os
+from pathlib import Path
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from drive_service import (
     CarpetaNoEncontrada,
+    CredencialesNoEncontradas,
     SinPermisoCarpeta,
     buscar_documento_duplicado,
     subir_docx_como_google_docs,
     verificar_carpeta,
     _obtener_credenciales_desde_secreto,
+    obtener_credenciales,
 )
+from sheets_service import crear_servicio_sheets
 
 
 class DriveServiceTests(unittest.TestCase):
@@ -70,6 +74,79 @@ class DriveServiceTests(unittest.TestCase):
                 os.environ.pop("GOOGLE_OAUTH_TOKEN", None)
             else:
                 os.environ["GOOGLE_OAUTH_TOKEN"] = anterior
+
+    @patch("drive_service.Credentials.from_authorized_user_info")
+    @patch("drive_service.service_account.Credentials.from_service_account_info")
+    def test_service_account_tiene_prioridad_sobre_oauth(self, crear_service_account, crear_oauth):
+        credenciales = MagicMock()
+        crear_service_account.return_value = credenciales
+        with patch.dict(os.environ, {
+            "GOOGLE_SERVICE_ACCOUNT_JSON": '{"type":"service_account"}',
+            "GOOGLE_OAUTH_TOKEN": '{"token":"legacy"}',
+        }):
+            resultado = obtener_credenciales(Path("sin-credenciales.json"), Path("sin-token.json"))
+        self.assertIs(resultado, credenciales)
+        crear_service_account.assert_called_once()
+        self.assertEqual(crear_service_account.call_args.kwargs["scopes"], [
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/spreadsheets",
+        ])
+        crear_oauth.assert_not_called()
+
+    @patch("drive_service.Credentials.from_authorized_user_info")
+    def test_sin_service_account_usa_oauth_legacy(self, crear_oauth):
+        credenciales = MagicMock()
+        crear_oauth.return_value = credenciales
+        with patch.dict(os.environ, {"GOOGLE_SERVICE_ACCOUNT_JSON": "", "GOOGLE_OAUTH_TOKEN": '{"token":"legacy"}'}):
+            resultado = obtener_credenciales(Path("sin-credenciales.json"), Path("sin-token.json"))
+        self.assertIs(resultado, credenciales)
+        crear_oauth.assert_called_once()
+
+    @patch("drive_service.Credentials.from_authorized_user_info")
+    def test_service_account_invalida_hace_fallback_a_oauth(self, crear_oauth):
+        credenciales = MagicMock()
+        crear_oauth.return_value = credenciales
+        secreto_falso = '{"private_key":"no-exponer-esta-clave"'
+        with self.assertLogs("drive_service", "WARNING") as logs, patch.dict(os.environ, {
+            "GOOGLE_SERVICE_ACCOUNT_JSON": secreto_falso,
+            "GOOGLE_OAUTH_TOKEN": '{"token":"legacy"}',
+        }):
+            resultado = obtener_credenciales(Path("sin-credenciales.json"), Path("sin-token.json"))
+        self.assertIs(resultado, credenciales)
+        self.assertNotIn("no-exponer-esta-clave", "\n".join(logs.output))
+
+    @patch("drive_service.Credentials.from_authorized_user_info")
+    @patch("drive_service.service_account.Credentials.from_service_account_info", side_effect=ValueError("error"))
+    def test_error_creando_service_account_hace_fallback_a_oauth(self, _crear_service_account, crear_oauth):
+        credenciales = MagicMock()
+        crear_oauth.return_value = credenciales
+        with patch.dict(os.environ, {
+            "GOOGLE_SERVICE_ACCOUNT_JSON": '{"type":"service_account"}',
+            "GOOGLE_OAUTH_TOKEN": '{"token":"legacy"}',
+        }):
+            self.assertIs(obtener_credenciales(Path("sin-credenciales.json"), Path("sin-token.json")), credenciales)
+
+    def test_ambas_credenciales_invalidas_devuelven_error_controlado(self):
+        secreto_falso = '{"private_key":"no-exponer-esta-clave"'
+        with self.assertLogs("drive_service", "ERROR") as logs, patch.dict(os.environ, {
+            "GOOGLE_SERVICE_ACCOUNT_JSON": secreto_falso,
+            "GOOGLE_OAUTH_TOKEN": "{invalido}",
+        }):
+            with self.assertRaises(CredencialesNoEncontradas):
+                obtener_credenciales(Path("sin-credenciales.json"), Path("sin-token.json"))
+        salida = "\n".join(logs.output)
+        self.assertNotIn("no-exponer-esta-clave", salida)
+        self.assertNotIn("{invalido}", salida)
+
+    @patch("sheets_service.build")
+    @patch("drive_service.build")
+    def test_drive_y_sheets_reciben_la_misma_credencial_central(self, crear_drive, crear_sheets):
+        credenciales = MagicMock()
+        from drive_service import crear_servicio_drive
+        crear_servicio_drive(credenciales)
+        crear_servicio_sheets(credenciales)
+        self.assertIs(crear_drive.call_args.kwargs["credentials"], credenciales)
+        self.assertIs(crear_sheets.call_args.kwargs["credentials"], credenciales)
 
 
 if __name__ == "__main__":

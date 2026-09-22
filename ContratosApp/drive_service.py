@@ -65,16 +65,17 @@ class ResultadoDrive:
 def obtener_credenciales(
     credentials_path: Path = CREDENTIALS_PATH, token_path: Path = TOKEN_PATH
 ) -> Credentials:
-    """Carga, renueva o solicita OAuth local y guarda el token sin registrarlo."""
-    credenciales = _obtener_credenciales_desde_secreto()
-    token_desde_secreto = credenciales is not None
-    # Conserva compatibilidad con el OAuth que ya usaba la aplicación. Si ambos
-    # secretos existen, el token OAuth explícito tiene prioridad sobre una
-    # Service Account residual o configurada para otro entorno.
-    if credenciales:
-        return credenciales
+    """Obtiene una credencial Google centralizada: Service Account y luego OAuth."""
     credenciales = _obtener_credenciales_service_account()
     if credenciales:
+        LOGGER.info("Autenticación Google inicializada mediante Service Account.")
+        return credenciales
+
+    LOGGER.warning("No fue posible inicializar la Service Account. Se utilizará OAuth legacy.")
+    credenciales = _obtener_credenciales_desde_secreto()
+    token_desde_secreto = credenciales is not None
+    if credenciales:
+        LOGGER.info("Autenticación Google inicializada mediante OAuth legacy.")
         return credenciales
     if credenciales is None and token_path.exists():
         try:
@@ -83,6 +84,7 @@ def obtener_credenciales(
             LOGGER.warning("No se pudo cargar el token local: %s", type(error).__name__)
 
     if credenciales and credenciales.valid:
+        LOGGER.info("Autenticación Google inicializada mediante OAuth legacy.")
         return credenciales
     if credenciales and credenciales.expired and credenciales.refresh_token:
         try:
@@ -94,21 +96,25 @@ def obtener_credenciales(
     if credenciales and credenciales.valid:
         if not token_desde_secreto:
             token_path.write_text(credenciales.to_json(), encoding="utf-8")
+        LOGGER.info("Autenticación Google inicializada mediante OAuth legacy.")
         return credenciales
     if os.getenv("GOOGLE_OAUTH_CLIENT_CONFIG"):
+        LOGGER.error("No fue posible inicializar ninguna credencial Google.")
         raise TokenCloudNoConfigurado(
             "Falta configurar GOOGLE_OAUTH_TOKEN en los Secrets de Streamlit Cloud."
         )
     if not credentials_path.exists():
+        LOGGER.error("No fue posible inicializar ninguna credencial Google.")
         raise CredencialesNoEncontradas("No se encontró credentials.json.")
 
     try:
         flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
         credenciales = flow.run_local_server(port=0)
         token_path.write_text(credenciales.to_json(), encoding="utf-8")
+        LOGGER.info("Autenticación Google inicializada mediante OAuth legacy.")
         return credenciales
     except Exception as error:
-        LOGGER.exception("No fue posible completar OAuth: %s", type(error).__name__)
+        LOGGER.error("No fue posible inicializar ninguna credencial Google.")
         raise ErrorDrive("No fue posible iniciar sesión en Google.") from error
 
 
@@ -121,9 +127,8 @@ def _obtener_credenciales_service_account() -> Credentials | None:
         return service_account.Credentials.from_service_account_info(
             json.loads(contenido), scopes=SCOPES,
         )
-    except (ValueError, json.JSONDecodeError) as error:
-        LOGGER.warning("La Service Account configurada no es válida: %s", type(error).__name__)
-        raise ErrorDrive("La configuración de Google para producción no es válida.") from error
+    except Exception:
+        return None
 
 
 def _obtener_credenciales_desde_secreto() -> Credentials | None:
@@ -133,9 +138,9 @@ def _obtener_credenciales_desde_secreto() -> Credentials | None:
         return None
     try:
         return Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
-    except (ValueError, json.JSONDecodeError) as error:
-        LOGGER.warning("El token OAuth configurado como secreto no es válido: %s", type(error).__name__)
-        raise TokenCloudNoConfigurado("El secreto GOOGLE_OAUTH_TOKEN no tiene un formato válido.") from error
+    except Exception:
+        LOGGER.warning("No fue posible inicializar OAuth legacy desde GOOGLE_OAUTH_TOKEN.")
+        return None
 
 
 def crear_servicio_drive(credenciales: Credentials | None = None):
